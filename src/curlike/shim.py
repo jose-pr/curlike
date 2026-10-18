@@ -123,24 +123,38 @@ def revoke_argv(curl_path, argv):
     return ['--ssl-revoke-best-effort'] if version and version >= (7, 70, 0) else []
 
 
+def _system_route(argv):
+    """True when the system's proxy configuration is what would route this
+    command: no proxy variable is set (curl reads the ``*_proxy`` ones
+    itself, and ``<P>_PROXY`` is injected as configured)."""
+    return not agent_proxy.configured_proxy_url()
+
+
 def agent_proxy_argv(argv):
-    """Extra LEADING argv so real curl uses the configured proxy, or ``[]``.
+    """Extra LEADING argv so real curl uses the proxy httplib would, or ``[]``.
 
     Real curl reads only the global proxy vars (``http_proxy`` & co.), never
-    ``<P>_PROXY``, so a bare passthrough would send the traffic the wrong
-    way. Injected only when ``<P>_PROXY`` is set and the caller did not name
-    a proxy (``-x``) or a bypass list (``--noproxy``); a caller's ``-U``
-    keeps the proxy but replaces the credential. A configured header value
-    rides as ``--proxy-header`` (sent to the proxy only, the CONNECT
-    included); URL userinfo as ``--proxy-user``. ``NO_PROXY`` needs nothing:
-    curl honours it even with ``--proxy``. A prefix gateway is not
-    expressible to curl -- see :func:`use_real_curl`."""
-    if not HTTPEnv().get(agent_proxy.PROXY):
+    ``<P>_PROXY`` and never the system's proxy configuration (WinHTTP,
+    macOS, a desktop's, a PAC script), so a bare passthrough would send the
+    traffic the wrong way. Injected when ``<P>_PROXY`` is set -- or, with no
+    proxy variable at all, when the system's configuration names a proxy
+    for the URL asked for (the first URL of the command) -- and the caller
+    did not name a proxy (``-x``) or a bypass list (``--noproxy``); a
+    caller's ``-U`` keeps the proxy but replaces the credential. A
+    configured header value rides as ``--proxy-header`` (sent to the proxy
+    only, the CONNECT included); URL userinfo as ``--proxy-user``.
+    ``NO_PROXY`` needs nothing: curl honours it even with ``--proxy``. A
+    prefix gateway is not expressible to curl -- see :func:`use_real_curl`."""
+    configured = bool(HTTPEnv().get(agent_proxy.PROXY))
+    if not configured and not _system_route(argv):
         return []
     proxy, noproxy, proxy_user = caller_steering(argv)
     if proxy or noproxy is not None:
         return []
-    plan = agent_proxy.plan(proxy_user=proxy_user)
+    url = None if configured else requested_url(argv)
+    if not configured and not url:
+        return []
+    plan = agent_proxy.plan(proxy_user=proxy_user, url=url)
     if plan is None or plan.endpoint is not None:
         return []
     extra = ['--proxy', plan.proxy]
@@ -149,7 +163,7 @@ def agent_proxy_argv(argv):
     elif agent_proxy.configured_authorization():
         extra += ['--proxy-header', '%s: %s' % (plan.auth_header, plan.authorization)]
     else:
-        creds = agent_proxy.userinfo(agent_proxy.proxy_url())
+        creds = agent_proxy.userinfo(agent_proxy.proxy_url(url=url))
         if creds:
             extra += ['--proxy-user', '%s:%s' % creds]
     return extra

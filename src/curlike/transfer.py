@@ -256,7 +256,7 @@ def build_opener(args, plan, context, transfer, removed):
     ]
     handlers.append(urllib.request.ProxyHandler({}))
     if plan is not None:
-        proxy_auth = _proxy_auth(args, plan)
+        proxy_auth = _proxy_auth(args, plan, transfer.target)
         handlers.append(
             AgentProxyHandler(
                 plan,
@@ -658,31 +658,32 @@ class _OnceProxyBasic(urllib.request.ProxyBasicAuthHandler):
         return urllib.request.ProxyBasicAuthHandler.http_error_407(self, req, fp, code, msg, headers)
 
 
-def _proxy_auth(args, plan):
+def _proxy_auth(args, plan, url):
     """A :class:`ProxyAuth` for --proxy-digest / --proxy-anyauth with
-    credentials (-U, else the proxy URL's), or ``None``."""
+    credentials (-U, else the proxy URL's -- the one chosen for ``url``), or
+    ``None``."""
     if not (args.proxy_digest or args.proxy_anyauth) or plan is None or plan.endpoint is not None:
         return None
     if args.proxy_user:
         user, _, password = args.proxy_user.partition(':')
     else:
-        found = agent_proxy.userinfo(args.effective_proxy() or agent_proxy.proxy_url())
+        found = agent_proxy.userinfo(args.effective_proxy() or agent_proxy.proxy_url(url=url))
         if not found:
             return None
         user, password = found
     return ProxyAuth(user, password, anyauth=args.proxy_anyauth)
 
 
-def _socks_for(args, plan, proxy):
-    """``(socks proxy, socks pre-proxy)`` for the transfer: the plan's proxy
-    when it is SOCKS (credentials from -U, else its URL's userinfo), and
-    --preproxy in front of an HTTP proxy."""
+def _socks_for(args, plan, proxy, url):
+    """``(socks proxy, socks pre-proxy)`` for the transfer to ``url``: the
+    plan's proxy when it is SOCKS (credentials from -U, else its URL's
+    userinfo), and --preproxy in front of an HTTP proxy."""
     if plan is None:
         return None, None
     user = password = None
     if args.proxy_user:
         user, _, password = args.proxy_user.partition(':')
-    raw = proxy or agent_proxy.proxy_url() or ''
+    raw = proxy or agent_proxy.proxy_url(url=url) or ''
     if Socks.is_socks(raw):
         return Socks(raw, user, password), None
     pre = Socks(args.preproxy) if args.preproxy else None
@@ -733,9 +734,11 @@ def run(args):
         proxy = args.effective_proxy()
         if not proxy and args.preproxy and Socks.is_socks(args.preproxy):
             proxy = args.preproxy  # a pre-proxy with no proxy after it is the proxy
-        check_proxy_syntax(proxy or agent_proxy.proxy_url())  # curl's 5
-        plan = agent_proxy.plan(proxy=proxy, noproxy=args.noproxy, proxy_user=args.proxy_user)
-        args.socks, args.socks_pre = _socks_for(args, plan, proxy)
+        check_proxy_syntax(proxy or agent_proxy.proxy_url(url=url))  # curl's 5
+        # Decided for this URL (the system's answer may differ per URL); its
+        # redirect hops keep the decision, as with curl's own --proxy.
+        plan = agent_proxy.plan(proxy=proxy, noproxy=args.noproxy, proxy_user=args.proxy_user, url=url)
+        args.socks, args.socks_pre = _socks_for(args, plan, proxy, url)
         transfer = Transfer(typed, url, method, plan)
         args.output_target(url)
         if args.prepare_download(headers):

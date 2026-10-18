@@ -87,6 +87,10 @@ def build_ssl_context(
                 'error setting certificate verify locations: CAfile: %s CApath: %s (%s)'
                 % (cacert or 'none', capath or 'none', exc),
             )
+    elif crlfile:
+        # The OS verifier (truststore) ignores OpenSSL's CRL flags: a CRL
+        # check needs OpenSSL to verify, over the system's store.
+        ctx = ssl.create_default_context()
     else:
         ctx = new_os_context()
     if crlfile and not insecure:
