@@ -9,7 +9,7 @@ installed. The servers are raw sockets on 127.0.0.1, so each failure is
 exact: a reply cut short, a reset, a proxy refusing or dropping the CONNECT.
 
 Where curl versions disagree, the fallback answers as the version
-``HTTPLIB_CURL_COMPAT`` names (``curlike.compat``): the comparison sets it to
+``SYSHTTP_CURL_COMPAT`` names (``curlike.compat``): the comparison sets it to
 the real curl's own version, so every scenario is exact for any curl.
 """
 
@@ -544,7 +544,7 @@ def _real_version():
     return "%d.%d.%d" % found if found else "auto"
 
 
-#: The fallback answers as this curl (HTTPLIB_CURL_COMPAT).
+#: The fallback answers as this curl (SYSHTTP_CURL_COMPAT).
 REAL_VERSION = _real_version()
 EMPTY_PATH = None
 
@@ -560,7 +560,7 @@ def _run(argv, env, real):
     e.update(env)
     e["PATH"] = (os.path.dirname(REAL_CURL) + os.pathsep + os.environ.get("PATH", "")) if real else EMPTY_PATH
     if not real:
-        e["HTTPLIB_CURL_COMPAT"] = REAL_VERSION  # the fallback answers as this real curl
+        e["SYSHTTP_CURL_COMPAT"] = REAL_VERSION  # the fallback answers as this real curl
     if real and SCHANNEL:
         # Schannel cannot check revocation for a private test CA: a
         # certificate the CA signs would fail as "revocation status unknown".
@@ -750,7 +750,7 @@ SCENARIOS = [
         {},
     ),
     ("--preproxy alone", lambda w: ["--preproxy", "socks5h://" + w["socks_ok"], w["echo"] + "/s"], {}, False, {}),
-    ("agent proxy is SOCKS", lambda w: [_localhost(w, "echo")], {"HTTPLIB_PROXY": "@socks5h"}, False, {}),
+    ("agent proxy is SOCKS", lambda w: [_localhost(w, "echo")], {"SYSHTTP_PROXY": "@socks5h"}, False, {}),
     # HTTPS proxies: TLS to the proxy, verified by the --proxy-* TLS options.
     ("https proxy, http target", lambda w: ["-x", w["https_proxy"], "--proxy-cacert", _ca(w), X], {}, True, {}),
     ("https proxy, --proxy-insecure", lambda w: ["-x", w["https_proxy"], "--proxy-insecure", X], {}, True, {}),
@@ -863,7 +863,7 @@ SCENARIOS = [
         True,
         {55: 56},
     ),  # the same race as "client certificate required"
-    ("agent proxy over https", lambda w: ["--proxy-insecure", X], {"HTTPLIB_PROXY": "@https_proxy"}, True, {}),
+    ("agent proxy over https", lambda w: ["--proxy-insecure", X], {"SYSHTTP_PROXY": "@https_proxy"}, True, {}),
     # Proxy Digest: nothing up front, the 407 answered once.
     (
         "--proxy-digest",
@@ -1171,80 +1171,80 @@ SCENARIOS = [
     ),
     ("CONNECT tunnelled", lambda w: w["ca"] + ["-x", P(w, "proxy"), "-U", "agent:s3cret", S(w)], {}, True, {}),
     ("CONNECT tunnelled, untrusted", lambda w: ["-x", P(w, "proxy"), "-U", "agent:s3cret", S(w)], {}, True, {}),
-    # The agent proxy (HTTPLIB_PROXY): the shim hands it to real curl as
+    # The agent proxy (SYSHTTP_PROXY): the shim hands it to real curl as
     # --proxy / --proxy-header; the fallback applies it itself.
-    ("agent proxy", lambda w: [X], {"HTTPLIB_PROXY": "@proxy", "HTTPLIB_PROXY_AUTH": BASIC}, False, {}),
+    ("agent proxy", lambda w: [X], {"SYSHTTP_PROXY": "@proxy", "SYSHTTP_PROXY_AUTH": BASIC}, False, {}),
     (
         "agent proxy, wrong credential",
         lambda w: [X],
-        {"HTTPLIB_PROXY": "@proxy", "HTTPLIB_PROXY_AUTH": "Basic eA=="},
+        {"SYSHTTP_PROXY": "@proxy", "SYSHTTP_PROXY_AUTH": "Basic eA=="},
         False,
         {},
     ),
     (
         "agent proxy, wrong credential -f",
         lambda w: ["-f", X],
-        {"HTTPLIB_PROXY": "@proxy", "HTTPLIB_PROXY_AUTH": "Basic eA=="},
+        {"SYSHTTP_PROXY": "@proxy", "SYSHTTP_PROXY_AUTH": "Basic eA=="},
         False,
         {},
     ),
-    ("agent proxy, no credential", lambda w: [X], {"HTTPLIB_PROXY": "@proxy"}, False, {}),
-    ("agent proxy, userinfo credential", lambda w: [X], {"HTTPLIB_PROXY": "@proxy+userinfo"}, False, {}),
-    ("agent proxy refused", lambda w: [X], {"HTTPLIB_PROXY": "@dead"}, False, {}),
-    ("agent proxy not resolvable", lambda w: [X], {"HTTPLIB_PROXY": "http://nonexistent.invalid:3128"}, False, {}),
-    ("agent proxy malformed", lambda w: [X], {"HTTPLIB_PROXY": "not a url"}, False, {}),
+    ("agent proxy, no credential", lambda w: [X], {"SYSHTTP_PROXY": "@proxy"}, False, {}),
+    ("agent proxy, userinfo credential", lambda w: [X], {"SYSHTTP_PROXY": "@proxy+userinfo"}, False, {}),
+    ("agent proxy refused", lambda w: [X], {"SYSHTTP_PROXY": "@dead"}, False, {}),
+    ("agent proxy not resolvable", lambda w: [X], {"SYSHTTP_PROXY": "http://nonexistent.invalid:3128"}, False, {}),
+    ("agent proxy malformed", lambda w: [X], {"SYSHTTP_PROXY": "not a url"}, False, {}),
     (
         "agent proxy CONNECT 407",
         lambda w: w["ca"] + [S(w)],
-        {"HTTPLIB_PROXY": "@proxy", "HTTPLIB_PROXY_AUTH": "Basic eA=="},
+        {"SYSHTTP_PROXY": "@proxy", "SYSHTTP_PROXY_AUTH": "Basic eA=="},
         False,
         {},
     ),
     (
         "agent proxy CONNECT 407 -f",
         lambda w: w["ca"] + ["-f", S(w)],
-        {"HTTPLIB_PROXY": "@proxy", "HTTPLIB_PROXY_AUTH": "Basic eA=="},
+        {"SYSHTTP_PROXY": "@proxy", "SYSHTTP_PROXY_AUTH": "Basic eA=="},
         False,
         {},
     ),
     (
         "agent proxy bearer CONNECT 407",
         lambda w: w["ca"] + [S(w)],
-        {"HTTPLIB_PROXY": "@proxy", "HTTPLIB_PROXY_AUTH": "Bearer t"},
+        {"SYSHTTP_PROXY": "@proxy", "SYSHTTP_PROXY_AUTH": "Bearer t"},
         False,
         {},
     ),
     (
         "agent proxy CONNECT tunnelled",
         lambda w: w["ca"] + [S(w)],
-        {"HTTPLIB_PROXY": "@proxy", "HTTPLIB_PROXY_AUTH": BASIC},
+        {"SYSHTTP_PROXY": "@proxy", "SYSHTTP_PROXY_AUTH": BASIC},
         True,
         {},
     ),
-    # HTTPLIB_PROXY_AUTH_HEADER: the credential in a header of that name, to
+    # SYSHTTP_PROXY_AUTH_HEADER: the credential in a header of that name, to
     # the proxy only -- on the CONNECT for https, never through the tunnel.
     (
         "agent proxy custom header",
         lambda w: [X],
-        {"HTTPLIB_PROXY": "@token_proxy", "HTTPLIB_PROXY_AUTH": BASIC, "HTTPLIB_PROXY_AUTH_HEADER": "X-Proxy-Token"},
+        {"SYSHTTP_PROXY": "@token_proxy", "SYSHTTP_PROXY_AUTH": BASIC, "SYSHTTP_PROXY_AUTH_HEADER": "X-Proxy-Token"},
         False,
         {},
     ),
     (
         "agent proxy custom header CONNECT",
         lambda w: w["ca"] + [S(w)],
-        {"HTTPLIB_PROXY": "@token_proxy", "HTTPLIB_PROXY_AUTH": BASIC, "HTTPLIB_PROXY_AUTH_HEADER": "X-Proxy-Token"},
+        {"SYSHTTP_PROXY": "@token_proxy", "SYSHTTP_PROXY_AUTH": BASIC, "SYSHTTP_PROXY_AUTH_HEADER": "X-Proxy-Token"},
         True,
         {},
     ),
     (
         "agent proxy custom header never reaches the origin",
         lambda w: w["ca"] + [S(w)],
-        {"HTTPLIB_PROXY": "@open_proxy", "HTTPLIB_PROXY_AUTH": BASIC, "HTTPLIB_PROXY_AUTH_HEADER": "X-Proxy-Token"},
+        {"SYSHTTP_PROXY": "@open_proxy", "SYSHTTP_PROXY_AUTH": BASIC, "SYSHTTP_PROXY_AUTH_HEADER": "X-Proxy-Token"},
         True,
         {},
     ),
-    ("agent proxy dropped CONNECT", lambda w: w["ca"] + [S(w)], {"HTTPLIB_PROXY": "@proxy_drops"}, False, {}),
+    ("agent proxy dropped CONNECT", lambda w: w["ca"] + [S(w)], {"SYSHTTP_PROXY": "@proxy_drops"}, False, {}),
 ]
 
 

@@ -1,4 +1,4 @@
-"""HTTPLIB_CURL_COMPAT: the curl version the fallback answers as where versions
+"""SYSHTTP_CURL_COMPAT: the curl version the fallback answers as where versions
 disagree (``curlike.compat``). The parity tests prove each answer against
 real curl; these pin the setting itself."""
 
@@ -79,7 +79,7 @@ def test_an_unreadable_value_is_exit_2(monkeypatch, capsys):
     monkeypatch.setattr(curl, "find_real_curl", lambda *a: None)
     rc = curl.main(["-sS", "-x", "http://127.0.0.1:1", "https://example.invalid/"])
     err = capsys.readouterr().err
-    assert rc == 2 and "HTTPLIB_CURL_COMPAT=latest" in err, err
+    assert rc == 2 and "SYSHTTP_CURL_COMPAT=latest" in err, err
 
 
 def test_the_shim_never_finds_itself(tmp_path, monkeypatch):

@@ -1,12 +1,12 @@
 """The urllib side of the proxy decision: the handler that applies an
-``httplib.proxy.ProxyPlan`` -- the same plan the session's adapter applies --
+``syshttp.proxy.ProxyPlan`` -- the same plan the session's adapter applies --
 to every hop, and the caller's view of a URL a prefix gateway rewrote."""
 
 import re
 import urllib.parse
 import urllib.request
 
-from httplib import proxy as agent_proxy
+from syshttp import proxy as agent_proxy
 
 from .errors import EXIT_RESOLVE_PROXY, LocalError
 

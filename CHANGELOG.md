@@ -17,22 +17,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `ssl_context=` / `proxy_ssl_context=`: a caller's `ssl.SSLContext` used as
   given for every https origin or an `https://` proxy (mutual TLS, ciphers,
   protocol versions). The TLS flags it replaces are refused beside it (exit 2).
+- With no proxy variable set, the system's proxy configuration routes each
+  URL on the command line (through syshttp: WinHTTP, CFNetwork, libproxy, PAC,
+  WPAD); its redirect hops keep that decision, as with curl's own `--proxy`.
+  The real curl is handed that proxy with `--proxy` (curl reads only the
+  `*_proxy` variables). `SYSHTTP_SYSTEM_PROXY=0` turns it off.
 
 ### Changed
 
 - The package stands alone. It was previously the dotagents `net` overlay's
   curl shim (`bin/curl.py`) and its fallback (`httplib.cli`,
   `python -m httplib`). The fallback is now `curlike` (`curlike.main`), and
-  the shim is `curlike.shim`.
-- Settings follow httplib's prefix (`HTTPLIB_PREFIX`, default `HTTPLIB`):
-  `NET_CURL` → `HTTPLIB_CURL`, `NET_CURL_COMPAT` → `HTTPLIB_CURL_COMPAT`,
-  `NET_CURL_SSL_REVOKE` → `HTTPLIB_CURL_SSL_REVOKE`, `AGENTS_PYTHON` →
-  `HTTPLIB_PYTHON`, `AGENTS_PYLIB` → `HTTPLIB_PYLIB`. The proxy and hook
-  variables are httplib's (`HTTPLIB_PROXY`, `HTTPLIB_HOOKS_<KEY>_CURL`). With
-  `HTTPLIB_PREFIX=AGENTS`, the `AGENTS_*` names are read instead.
+  the shim is `curlike.shim`. It runs on syshttp, the overlay's `httplib`
+  as a package of its own.
+- Settings follow syshttp's prefix (`SYSHTTP_PREFIX`, default `SYSHTTP`):
+  `NET_CURL` → `SYSHTTP_CURL`, `NET_CURL_COMPAT` → `SYSHTTP_CURL_COMPAT`,
+  `NET_CURL_SSL_REVOKE` → `SYSHTTP_CURL_SSL_REVOKE`, `AGENTS_PYTHON` →
+  `SYSHTTP_PYTHON`, `AGENTS_PYLIB` → `SYSHTTP_PYLIB`. The proxy and hook
+  variables are syshttp's (`SYSHTTP_PROXY`, `SYSHTTP_HOOKS_<KEY>_CURL`). With
+  `SYSHTTP_PREFIX=AGENTS`, the `AGENTS_*` names are read instead.
+- The fallback verifies certificates through the operating system by default
+  (syshttp's truststore context on Python 3.10+). `--crlfile` keeps an OpenSSL
+  context, because the OS verifier ignores CRL flags.
 - A malformed proxy setting is reported as `curl: ignoring the configured
   proxy: …` (was `ignoring the agent proxy`).
 - `curl -V` from the fallback says `curl 0.0.0-curlike-shim … -- curlike
   fallback`, and `%{json}`'s `curl_version` says `(curlike fallback)`.
+
+### Fixed
+
+- `--local-port` with a range moves to the next port when `connect()` finds
+  the port in use. Windows reports a port whose last connection to the same
+  address is in TIME_WAIT there, not at `bind()`, and the fallback used to
+  give up with exit 7.
 
 [Unreleased]: https://github.com/jose-pr/curlike/commits/main

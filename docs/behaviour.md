@@ -1,6 +1,6 @@
 # Behaviour
 
-`<P>` is httplib's settings prefix: `HTTPLIB` unless `HTTPLIB_PREFIX` names another.
+`<P>` is syshttp's settings prefix: `SYSHTTP` unless `SYSHTTP_PREFIX` names another.
 
     pycurl https://example.com
     pycurl -s -o out.json -H 'Accept: application/json' https://api.example.com/x
@@ -14,7 +14,7 @@
   its credential. A **`prefix` gateway is served by the fallback**, not real
   curl: curl cannot express `<proxy><endpoint><url>` per hop (multi-URL, `-L`,
   config files), so the shim speaks the gateway itself and flags it lacks fail
-  loud. The fallback resolves the proxy exactly like `httplib` (`<P>_PROXY`,
+  loud. The fallback resolves the proxy exactly like `syshttp` (`<P>_PROXY`,
   then the global vars; credential and type as below), re-decides **every
   redirect hop** (proxied again, or direct without the credential for a
   `NO_PROXY` host) and honours `NO_PROXY`. `-x` names a proxy of your own
@@ -148,7 +148,7 @@
     proxy configuration is exit 2 (`curl: (2) …`, one line, never a
     traceback). `-o /dev/null` is the null device on Windows too.
   - **`--retry N`** retries what curl calls transient — a timeout and HTTP
-    408/429/500/502/503/504 (`httplib.retry.TRANSIENT_STATUSES`, the list the
+    408/429/500/502/503/504 (`syshttp.retry.TRANSIENT_STATUSES`, the list the
     requests session retries too) — after 1s, doubling (`--retry-delay` fixes
     it, a `Retry-After` wins), within `--retry-max-time`; `--retry-connrefused`
     adds a refused connection, `--retry-all-errors` any error (with `-f`, an
@@ -234,7 +234,7 @@
 - **`<P>_CURL=0`** (or `n`/`no`/`false`/`off`) runs the real curl exactly as
   typed — no configured proxy, no hooks, no fallback; exit 2 if there is none. Unset
   or `1`/`y` is the shim.
-- Fallback TLS verifies against the **OS trust store** — `httplib.tls`, the
+- Fallback TLS verifies against the **OS trust store** — `syshttp.tls`, the
   same store the requests session uses — unless `--cacert` / `--capath` or
   `$CURL_CA_BUNDLE` name one, which replaces it as in curl; `-k/--insecure`
   disables verification. `--cert file[:password]` (the file may hold the key),

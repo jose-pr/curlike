@@ -12,7 +12,7 @@ The command is the API. The importable entry points are in `curlike.shim`
 the fallback's option groups and transfer machinery: none of them is
 public, and their import paths may move.
 
-`pip install curlike` brings `httplib` (proxy, cookies, TLS and URL hooks)
+`pip install curlike` brings `syshttp` (proxy, cookies, TLS and URL hooks)
 and `duho` (the fallback's options). The extra `dns` adds `netimps` for
 `--dns-servers`, `--dns-ipv4-addr`, `--dns-ipv6-addr`, `--dns-interface`,
 `--doh-url` and `--interface` by name. Without it those flags are refused
@@ -72,10 +72,10 @@ The real curl is still found behind it.
 
 ## Behaviour
 
-`<P>` is httplib's settings prefix: `HTTPLIB` unless `HTTPLIB_PREFIX` names
+`<P>` is syshttp's settings prefix: `SYSHTTP` unless `SYSHTTP_PREFIX` names
 another. The proxy settings (`<P>_PROXY`, `<P>_PROXY_AUTH`,
 `<P>_PROXY_AUTH_HEADER`, `<P>_PROXY_TYPE`) and URL hooks
-(`<P>_HOOKS_<KEY>_CURL`) are httplib's. Its own API header documents them.
+(`<P>_HOOKS_<KEY>_CURL`) are syshttp's. Its own API header documents them.
 
     curl https://example.com
     curl -s -o out.json -H 'Accept: application/json' https://api.example.com/x
@@ -85,12 +85,17 @@ another. The proxy settings (`<P>_PROXY`, `<P>_PROXY_AUTH`,
   `http_proxy` vars, never `<P>_PROXY`, so when `<P>_PROXY` is set and you
   did not name a proxy (`-x`) or a bypass list (`--noproxy`), the shim prepends
   `--proxy` plus `--proxy-header 'Proxy-Authorization: …'` (or `--proxy-user`
-  for URL userinfo). Your own `-U user:pass` keeps the configured proxy and replaces
-  its credential. A **`prefix` gateway is served by the fallback**, not real
+  for URL userinfo). With no proxy variable at all, the proxy the **system's
+  configuration** names for the URL asked for (the command's first URL;
+  syshttp: WinHTTP, CFNetwork, libproxy, PAC, WPAD) is prepended the same
+  way, since curl reads none of those; a DIRECT answer adds nothing.
+  `<P>_SYSTEM_PROXY=0` turns that off. Your own `-U user:pass` keeps the
+  configured proxy and replaces its credential. A **`prefix` gateway is served by the fallback**, not real
   curl: curl cannot express `<proxy><endpoint><url>` per hop (multi-URL, `-L`,
   config files), so the shim speaks the gateway itself and flags it lacks fail
-  loud. The fallback resolves the proxy exactly like `httplib` (`<P>_PROXY`,
-  then the global vars; credential and type as below), re-decides **every
+  loud. The fallback resolves the proxy exactly like `syshttp` (`<P>_PROXY`,
+  then the global vars, then the system's configuration for each URL on the
+  command line; credential and type as below), re-decides **every
   redirect hop** (proxied again, or direct without the credential for a
   `NO_PROXY` host) and honours `NO_PROXY`. `-x` names a proxy of your own
   (always `connect`, never given the configured proxy's credential); `--noproxy`
@@ -223,7 +228,7 @@ another. The proxy settings (`<P>_PROXY`, `<P>_PROXY_AUTH`,
     proxy configuration is exit 2 (`curl: (2) …`, one line, never a
     traceback). `-o /dev/null` is the null device on Windows too.
   - **`--retry N`** retries what curl calls transient — a timeout and HTTP
-    408/429/500/502/503/504 (`httplib.retry.TRANSIENT_STATUSES`, the list the
+    408/429/500/502/503/504 (`syshttp.retry.TRANSIENT_STATUSES`, the list the
     requests session retries too) — after 1s, doubling (`--retry-delay` fixes
     it, a `Retry-After` wins), within `--retry-max-time`; `--retry-connrefused`
     adds a refused connection, `--retry-all-errors` any error (with `-f`, an
@@ -309,8 +314,10 @@ another. The proxy settings (`<P>_PROXY`, `<P>_PROXY_AUTH`,
 - **`<P>_CURL=0`** (or `n`/`no`/`false`/`off`) runs the real curl exactly as
   typed — no configured proxy, no hooks, no fallback; exit 2 if there is none. Unset
   or `1`/`y` is the shim.
-- Fallback TLS verifies against the **OS trust store** — `httplib.tls`, the
-  same store the requests session uses — unless `--cacert` / `--capath` or
+- Fallback TLS is verified by the **operating system** — `syshttp.tls`, a
+  truststore context on Python 3.10+ (CryptoAPI, the Security framework),
+  the same the requests session uses; `--crlfile` keeps an OpenSSL context
+  over the system store, since the OS verifier ignores CRL flags — unless `--cacert` / `--capath` or
   `$CURL_CA_BUNDLE` name one, which replaces it as in curl; `-k/--insecure`
   disables verification. `--cert file[:password]` (the file may hold the key),
   `--key`, `--pass` present a client certificate, PEM only.
@@ -328,7 +335,7 @@ another. The proxy settings (`<P>_PROXY`, `<P>_PROXY_AUTH`,
 | `CURL_CA_BUNDLE` | the fallback's CA bundle, as in curl | the OS trust store |
 
 The proxy, its credential, its kind, `NO_PROXY` and the URL hooks are read
-by httplib under the same prefix.
+by syshttp under the same prefix.
 
 ## Gotchas
 

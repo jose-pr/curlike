@@ -1,4 +1,4 @@
-"""HTTPLIB_CURL_SSL_REVOKE: a real curl on Windows' Schannel checks certificate
+"""SYSHTTP_CURL_SSL_REVOKE: a real curl on Windows' Schannel checks certificate
 revocation and fails (exit 60, "the revocation status is unknown") when a
 certificate's revocation list is missing or unreachable -- which OpenSSL
 curls never check. The shim adds --ssl-revoke-best-effort for such a curl
@@ -23,7 +23,7 @@ from test_proxy_auth import _capture_real_curl, _clean_env  # noqa: F401
 
 @pytest.fixture(autouse=True)
 def _windows_schannel_curl(monkeypatch):
-    monkeypatch.delenv("HTTPLIB_CURL_SSL_REVOKE", raising=False)
+    monkeypatch.delenv("SYSHTTP_CURL_SSL_REVOKE", raising=False)
     monkeypatch.setattr(curl.os, "name", "nt")
     monkeypatch.setattr(compat, "describe", lambda path: ((8, 21, 0), True))
 
@@ -39,7 +39,7 @@ def test_schannel_gets_best_effort_by_default(monkeypatch):
 )
 def test_the_setting(monkeypatch, value, added):
     calls = _capture_real_curl(monkeypatch)
-    monkeypatch.setenv("HTTPLIB_CURL_SSL_REVOKE", value)
+    monkeypatch.setenv("SYSHTTP_CURL_SSL_REVOKE", value)
     curl.main(["-s", "https://example.com/"])
     assert calls[0][1:] == added + ["-s", "https://example.com/"]
 
@@ -67,9 +67,9 @@ def test_never_off_windows(monkeypatch):
 
 def test_an_unknown_value_is_exit_2(monkeypatch, capsys):
     _capture_real_curl(monkeypatch)
-    monkeypatch.setenv("HTTPLIB_CURL_SSL_REVOKE", "maybe")
+    monkeypatch.setenv("SYSHTTP_CURL_SSL_REVOKE", "maybe")
     assert curl.main(["-s", "https://example.com/"]) == 2
-    assert "HTTPLIB_CURL_SSL_REVOKE=maybe" in capsys.readouterr().err
+    assert "SYSHTTP_CURL_SSL_REVOKE=maybe" in capsys.readouterr().err
 
 
 # --------------------------------------------------------------------------- #
@@ -107,7 +107,7 @@ def test_a_missing_revocation_list_passes_through_the_shim(pki, monkeypatch):
     try:
         argv = ["-sS", "--cacert", str(pki / "ca.pem"), url]
         bare = subprocess.run([_schannel_curl()] + argv, capture_output=True)
-        env = {k: v for k, v in os.environ.items() if not k.upper().startswith("HTTPLIB_")}
+        env = {k: v for k, v in os.environ.items() if not k.upper().startswith("SYSHTTP_")}
         shimmed = subprocess.run([sys.executable, "-m", "curlike"] + argv, capture_output=True, env=env)
     finally:
         httpd.shutdown()

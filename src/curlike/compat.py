@@ -1,7 +1,7 @@
 """Which curl the fallback answers as, where curl versions disagree.
 
-``<P>_CURL_COMPAT`` (``HTTPLIB_CURL_COMPAT`` by default; the prefix
-is httplib's, see ``httplib.env``) names a curl version (``8.19``, ``8.19.0``) or ``auto``
+``<P>_CURL_COMPAT`` (``SYSHTTP_CURL_COMPAT`` by default; the prefix
+is syshttp's, see ``syshttp.env``) names a curl version (``8.19``, ``8.19.0``) or ``auto``
 (the default): the version of the real curl on PATH -- the shim serves a
 prefix-gateway request from the fallback even when curl is installed -- else
 :data:`NEWEST`. Read lazily: only a version-dependent answer asks for it.
@@ -59,7 +59,7 @@ import subprocess
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
-from httplib.env import HTTPEnv
+from syshttp.env import HTTPEnv
 
 #: The setting, as ``<P>_CURL_COMPAT``.
 COMPAT = 'CURL_COMPAT'

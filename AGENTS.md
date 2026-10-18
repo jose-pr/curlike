@@ -21,11 +21,11 @@
 ## Environment
 
 Python 3.9 or later; venvs under `.pyvenv/<version>-<os>-<arch>/`
-(`dotagents pyvenv`). httplib, duho and netimps come from sibling checkouts
+(`dotagents pyvenv`). syshttp, duho and netimps come from sibling checkouts
 until they are on PyPI at the versions declared:
 
 ```bash
-.pyvenv/<tag>/Scripts/python -m pip install -e ../httplib -e ../duho -e ../netimps -e ".[dev]"
+.pyvenv/<tag>/Scripts/python -m pip install -e ../syshttp -e ../duho -e ../netimps -e ".[dev]"
 ```
 
 ## Checks
@@ -42,7 +42,7 @@ until they are on PyPI at the versions declared:
   of curl's exit-23 messages applies.
 - A version-dependent answer goes in `compat`, measured against a real curl
   build, never inferred from curl's source alone.
-- Settings are read through `httplib.env.HTTPEnv`, never `os.environ` by name.
+- Settings are read through `syshttp.env.HTTPEnv`, never `os.environ` by name.
 
 ## Releasing
 

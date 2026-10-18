@@ -5,7 +5,7 @@ import errno
 import socket
 from typing import List, Optional
 
-from httplib.retry import TRANSIENT_STATUSES
+from syshttp.retry import TRANSIENT_STATUSES
 
 from ._duho import Meta, Arg
 from .args import Group

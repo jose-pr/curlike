@@ -3,7 +3,7 @@ launcher of your own calling :func:`main`.
 
   1. **The real curl, when one is on PATH** (never this shim). Run with the
      caller's argv and its exit code returned -- with ONE addition: when
-     httplib's ``<P>_PROXY`` is set and the caller does not steer the proxy
+     syshttp's ``<P>_PROXY`` is set and the caller does not steer the proxy
      (``-x``/``--proxy*``/``--noproxy``/``-U``), ``--proxy`` and its
      credential are added, since real curl reads only the global proxy vars;
      and for a Schannel curl (Windows), ``--ssl-revoke-best-effort``
@@ -14,8 +14,8 @@ launcher of your own calling :func:`main`.
      gateway, which curl cannot express.
 
 A ``<P>_HOOKS_<KEY>_CURL`` wrapper runs in place of both for the URLs it
-matches. ``<P>`` is httplib's prefix (``HTTPLIB`` unless ``HTTPLIB_PREFIX``
-says otherwise; see ``httplib.env``). The real-curl path needs duho only when
+matches. ``<P>`` is syshttp's prefix (``SYSHTTP`` unless ``SYSHTTP_PREFIX``
+says otherwise; see ``syshttp.env``). The real-curl path needs duho only when
 the configured proxy or a URL hook is in play (to read argv the way curl does).
 """
 
@@ -24,9 +24,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from httplib import hooks as net_hooks
-from httplib import proxy as agent_proxy
-from httplib.env import HTTPEnv
+from syshttp import hooks as net_hooks
+from syshttp import proxy as agent_proxy
+from syshttp.env import HTTPEnv
 
 from curlike import main as fallback_main
 from curlike import run_fallback  # noqa: F401  (re-exported for callers and tests)
@@ -131,7 +131,7 @@ def _system_route(argv):
 
 
 def agent_proxy_argv(argv):
-    """Extra LEADING argv so real curl uses the proxy httplib would, or ``[]``.
+    """Extra LEADING argv so real curl uses the proxy syshttp would, or ``[]``.
 
     Real curl reads only the global proxy vars (``http_proxy`` & co.), never
     ``<P>_PROXY`` and never the system's proxy configuration (WinHTTP,
@@ -227,7 +227,7 @@ def run_real_curl_as_typed(argv, entry=None):
 def maybe_run_hook(argv, entry=None):
     """``<P>_HOOKS_<KEY>`` + ``_CURL``: when the caller's URL matches, run the
     wrapper in this shim's place with argv appended and, in its environment,
-    the ``<P>_HOOK_*`` variables of ``httplib.hooks.wrapper_environment``
+    the ``<P>_HOOK_*`` variables of ``syshttp.hooks.wrapper_environment``
     (``<P>_HOOK_CURL`` is ``entry``: the executable to call curl back with).
     Returns the wrapper's exit code, or ``None`` when no hook applies."""
     if not net_hooks.hooks_from_env():

@@ -6,7 +6,7 @@ import os
 import ssl
 from typing import Optional
 
-from httplib.tls import new_os_context
+from syshttp.tls import new_os_context
 
 from ._duho import Meta, Arg
 from .args import Group
@@ -60,7 +60,7 @@ def build_ssl_context(
 ):
     """An SSL context. The server is verified against ``cacert`` / ``capath``
     when given, else ``$CURL_CA_BUNDLE`` (both replace the trust store, as in
-    curl), else the OS trust store -- ``httplib.tls``, the store the requests
+    curl), else the OS trust store -- ``syshttp.tls``, the store the requests
     session verifies against too; ``insecure`` (-k) verifies nothing.
     ``cert`` (``file[:password]``, may hold the key) / ``key`` /
     ``passphrase`` present a client certificate. ``min_version`` /

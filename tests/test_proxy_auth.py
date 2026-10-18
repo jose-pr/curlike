@@ -15,12 +15,12 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 
 from curlike import shim as curl
-from httplib import proxy as agent_proxy  # noqa: E402  (lib/, via conftest)
+from syshttp import proxy as agent_proxy  # noqa: E402  (lib/, via conftest)
 
 _ALL_VARS = [
-    "HTTPLIB_PROXY",
-    "HTTPLIB_PROXY_AUTH",
-    "HTTPLIB_PROXY_TYPE",
+    "SYSHTTP_PROXY",
+    "SYSHTTP_PROXY_AUTH",
+    "SYSHTTP_PROXY_TYPE",
     "HTTP_PROXY_AUTH",
     "HTTPS_PROXY",
     "https_proxy",
@@ -158,7 +158,7 @@ def gateway():
 
 
 # --------------------------------------------------------------------------
-# httplib.proxy: the header value, its sources, redaction, kind, bypass
+# syshttp.proxy: the header value, its sources, redaction, kind, bypass
 # --------------------------------------------------------------------------
 
 # --------------------------------------------------------------------------
@@ -179,8 +179,8 @@ def _capture_real_curl(monkeypatch):
 
 def test_real_curl_gets_the_agent_proxy_and_the_header(monkeypatch):
     calls = _capture_real_curl(monkeypatch)
-    monkeypatch.setenv("HTTPLIB_PROXY", "http://proxy.example:3128")
-    monkeypatch.setenv("HTTPLIB_PROXY_AUTH", BEARER)
+    monkeypatch.setenv("SYSHTTP_PROXY", "http://proxy.example:3128")
+    monkeypatch.setenv("SYSHTTP_PROXY_AUTH", BEARER)
     assert curl.main(["-s", "https://api.example.com/"]) == 0
     assert calls[0][1:] == [
         "--proxy",
@@ -194,7 +194,7 @@ def test_real_curl_gets_the_agent_proxy_and_the_header(monkeypatch):
 
 def test_real_curl_url_userinfo_becomes_proxy_user(monkeypatch):
     calls = _capture_real_curl(monkeypatch)
-    monkeypatch.setenv("HTTPLIB_PROXY", "http://agent:s3cret@proxy.example:3128")
+    monkeypatch.setenv("SYSHTTP_PROXY", "http://agent:s3cret@proxy.example:3128")
     curl.main(["https://api.example.com/"])
     assert calls[0][1:5] == ["--proxy", "http://proxy.example:3128", "--proxy-user", "agent:s3cret"]
 
@@ -204,9 +204,9 @@ def test_real_curl_is_not_used_for_a_prefix_gateway(target, gateway, monkeypatch
     argument cannot cover multi-URL invocations, -L, or config files -- so a
     prefix gateway is served by the fallback, which speaks it per hop."""
     calls = _capture_real_curl(monkeypatch)
-    monkeypatch.setenv("HTTPLIB_PROXY", gateway)
-    monkeypatch.setenv("HTTPLIB_PROXY_TYPE", "prefix:/fetch/")
-    monkeypatch.setenv("HTTPLIB_PROXY_AUTH", BEARER)
+    monkeypatch.setenv("SYSHTTP_PROXY", gateway)
+    monkeypatch.setenv("SYSHTTP_PROXY_TYPE", "prefix:/fetch/")
+    monkeypatch.setenv("SYSHTTP_PROXY_AUTH", BEARER)
     assert curl.main(["-s", target + "/x"]) == 0
     assert calls == [], "real curl must not run"
     assert capsysbinary.readouterr().out == b"via-gateway"
@@ -221,8 +221,8 @@ def test_real_curl_untouched_without_agents_proxy_or_when_caller_names_a_proxy(m
     monkeypatch.setenv("HTTPS_PROXY", "http://global.example:3128")
     curl.main(["https://api.example.com/"])
     assert calls[-1][1:] == ["https://api.example.com/"]
-    monkeypatch.setenv("HTTPLIB_PROXY", "http://proxy.example:3128")
-    monkeypatch.setenv("HTTPLIB_PROXY_AUTH", BEARER)
+    monkeypatch.setenv("SYSHTTP_PROXY", "http://proxy.example:3128")
+    monkeypatch.setenv("SYSHTTP_PROXY_AUTH", BEARER)
     for steer in (["-x", "http://other:1"], ["--proxy=http://other:1"], ["-sx", "http://other:1"], ["--noproxy", "*"]):
         curl.main([*steer, "https://api.example.com/"])
         assert calls[-1][1:] == [*steer, "https://api.example.com/"], steer
@@ -240,15 +240,15 @@ def test_real_curl_caller_credentials_keep_the_agent_proxy(monkeypatch):
     """-U names a credential, not a proxy: the agent proxy still applies, the
     agent credential does not (curl has the caller's -U on its own argv)."""
     calls = _capture_real_curl(monkeypatch)
-    monkeypatch.setenv("HTTPLIB_PROXY", "http://proxy.example:3128")
-    monkeypatch.setenv("HTTPLIB_PROXY_AUTH", BEARER)
+    monkeypatch.setenv("SYSHTTP_PROXY", "http://proxy.example:3128")
+    monkeypatch.setenv("SYSHTTP_PROXY_AUTH", BEARER)
     curl.main(["-U", "me:pw", "https://api.example.com/"])
     assert calls[-1][1:] == ["--proxy", "http://proxy.example:3128", "-U", "me:pw", "https://api.example.com/"]
 
 
 def test_real_curl_runs_as_typed_when_the_agent_proxy_is_malformed(monkeypatch, capsysbinary):
     calls = _capture_real_curl(monkeypatch)
-    monkeypatch.setenv("HTTPLIB_PROXY", "http://[bad:3128")
+    monkeypatch.setenv("SYSHTTP_PROXY", "http://[bad:3128")
     assert curl.main(["https://api.example.com/"]) == 0
     assert calls[-1][1:] == ["https://api.example.com/"]
     assert capsysbinary.readouterr().err.startswith(b"curl: ignoring the configured proxy:")
@@ -267,29 +267,29 @@ def _fallback(monkeypatch, capsysbinary, argv):
 
 def test_fallback_sends_the_configured_header(target, proxy, monkeypatch, capsysbinary):
     _Proxy.expected = BEARER
-    monkeypatch.setenv("HTTPLIB_PROXY", "http://" + proxy)
-    monkeypatch.setenv("HTTPLIB_PROXY_AUTH", BEARER)
+    monkeypatch.setenv("SYSHTTP_PROXY", "http://" + proxy)
+    monkeypatch.setenv("SYSHTTP_PROXY_AUTH", BEARER)
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", target + "/x"])
     assert rc == 0 and out.out == b"via-proxy"
     assert _Proxy.seen[-1] == (target + "/x", BEARER)
 
 
 def test_fallback_http_proxy_auth_fallback(target, proxy, monkeypatch, capsysbinary):
-    monkeypatch.setenv("HTTPLIB_PROXY", "http://" + proxy)
+    monkeypatch.setenv("SYSHTTP_PROXY", "http://" + proxy)
     monkeypatch.setenv("HTTP_PROXY_AUTH", BASIC)
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", target + "/x"])
     assert rc == 0 and out.out == b"via-proxy"
 
 
 def test_fallback_url_userinfo_as_basic(target, proxy, monkeypatch, capsysbinary):
-    monkeypatch.setenv("HTTPLIB_PROXY", "http://agent:s3cret@" + proxy)
+    monkeypatch.setenv("SYSHTTP_PROXY", "http://agent:s3cret@" + proxy)
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", target + "/x"])
     assert rc == 0 and out.out == b"via-proxy"
     assert _Proxy.seen[-1][1] == BASIC
 
 
 def test_fallback_without_credential_is_refused_by_the_proxy(target, proxy, monkeypatch, capsysbinary):
-    monkeypatch.setenv("HTTPLIB_PROXY", "http://" + proxy)
+    monkeypatch.setenv("SYSHTTP_PROXY", "http://" + proxy)
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "-i", target + "/x"])
     assert rc == 0 and out.out.startswith(b"HTTP/1.1 407"), "a 407 is a response curl prints, exit 0"
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "-f", target + "/x"])
@@ -297,15 +297,15 @@ def test_fallback_without_credential_is_refused_by_the_proxy(target, proxy, monk
 
 
 def test_fallback_proxy_user_flag_wins(target, proxy, monkeypatch, capsysbinary):
-    monkeypatch.setenv("HTTPLIB_PROXY", "http://" + proxy)
-    monkeypatch.setenv("HTTPLIB_PROXY_AUTH", "Bearer wrong")
+    monkeypatch.setenv("SYSHTTP_PROXY", "http://" + proxy)
+    monkeypatch.setenv("SYSHTTP_PROXY_AUTH", "Bearer wrong")
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "-U", "agent:s3cret", target + "/x"])
     assert rc == 0 and out.out == b"via-proxy"
 
 
 def test_fallback_explicit_proxy_never_borrows_the_agent_credential(target, proxy, monkeypatch, capsysbinary):
-    monkeypatch.setenv("HTTPLIB_PROXY", "http://elsewhere.example:1")
-    monkeypatch.setenv("HTTPLIB_PROXY_AUTH", BASIC)
+    monkeypatch.setenv("SYSHTTP_PROXY", "http://elsewhere.example:1")
+    monkeypatch.setenv("SYSHTTP_PROXY_AUTH", BASIC)
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "-i", "-x", "http://" + proxy, target + "/x"])
     assert rc == 0 and out.out.startswith(
         b"HTTP/1.1 407"
@@ -313,14 +313,14 @@ def test_fallback_explicit_proxy_never_borrows_the_agent_credential(target, prox
 
 
 def test_fallback_no_proxy_goes_direct(target, proxy, monkeypatch, capsysbinary):
-    monkeypatch.setenv("HTTPLIB_PROXY", "http://agent:s3cret@" + proxy)
+    monkeypatch.setenv("SYSHTTP_PROXY", "http://agent:s3cret@" + proxy)
     monkeypatch.setenv("NO_PROXY", "127.0.0.1")
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", target + "/x"])
     assert rc == 0 and out.out == b"hello" and _Proxy.seen == []
 
 
 def test_fallback_noproxy_flag_replaces_no_proxy(target, proxy, monkeypatch, capsysbinary):
-    monkeypatch.setenv("HTTPLIB_PROXY", "http://agent:s3cret@" + proxy)
+    monkeypatch.setenv("SYSHTTP_PROXY", "http://agent:s3cret@" + proxy)
     monkeypatch.setenv("NO_PROXY", "127.0.0.1")
     # --noproxy REPLACES the env list (curl semantics): 127.0.0.1 is proxied again.
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "--noproxy", "example.com", target + "/x"])
@@ -330,9 +330,9 @@ def test_fallback_noproxy_flag_replaces_no_proxy(target, proxy, monkeypatch, cap
 
 
 def test_fallback_prefix_gateway(target, gateway, monkeypatch, capsysbinary):
-    monkeypatch.setenv("HTTPLIB_PROXY", gateway)
-    monkeypatch.setenv("HTTPLIB_PROXY_TYPE", "prefix:/fetch/")
-    monkeypatch.setenv("HTTPLIB_PROXY_AUTH", BEARER)
+    monkeypatch.setenv("SYSHTTP_PROXY", gateway)
+    monkeypatch.setenv("SYSHTTP_PROXY_TYPE", "prefix:/fetch/")
+    monkeypatch.setenv("SYSHTTP_PROXY_AUTH", BEARER)
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", target + "/x"])
     assert rc == 0 and out.out == b"via-gateway"
     assert _Gateway.seen[-1] == ("/fetch/" + target + "/x", BEARER)
@@ -342,7 +342,7 @@ def test_fallback_prefix_gateway(target, gateway, monkeypatch, capsysbinary):
 
 
 def test_fallback_verbose_never_prints_the_credential(target, proxy, monkeypatch, capsysbinary):
-    monkeypatch.setenv("HTTPLIB_PROXY", "http://agent:s3cret@" + proxy)
+    monkeypatch.setenv("SYSHTTP_PROXY", "http://agent:s3cret@" + proxy)
     rc, out = _fallback(monkeypatch, capsysbinary, ["-v", target + "/x"])
     assert rc == 0
     assert b"Proxy: http://" + proxy.encode() + b" (with Proxy-Authorization)" in out.err
@@ -350,12 +350,12 @@ def test_fallback_verbose_never_prints_the_credential(target, proxy, monkeypatch
 
 
 # --------------------------------------------------------------------------
-# A bad HTTPLIB_PROXY_TYPE is a configuration error, reported as such
+# A bad SYSHTTP_PROXY_TYPE is a configuration error, reported as such
 # --------------------------------------------------------------------------
 
 
 def test_bad_type_is_harmless_without_a_proxy(target, monkeypatch, capsysbinary):
-    monkeypatch.setenv("HTTPLIB_PROXY_TYPE", "socks5")
+    monkeypatch.setenv("SYSHTTP_PROXY_TYPE", "socks5")
     calls = _capture_real_curl(monkeypatch)
     assert curl.main(["https://api.example.com/"]) == 0 and calls[-1][1:] == ["https://api.example.com/"]
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", target + "/x"])
@@ -363,17 +363,17 @@ def test_bad_type_is_harmless_without_a_proxy(target, monkeypatch, capsysbinary)
 
 
 def test_bad_type_with_a_proxy(target, monkeypatch, capsysbinary):
-    monkeypatch.setenv("HTTPLIB_PROXY", "http://proxy.example:3128")
-    monkeypatch.setenv("HTTPLIB_PROXY_TYPE", "socks5")
+    monkeypatch.setenv("SYSHTTP_PROXY", "http://proxy.example:3128")
+    monkeypatch.setenv("SYSHTTP_PROXY_TYPE", "socks5")
     # Real curl still runs, as typed, after one warning (never a traceback).
     calls = _capture_real_curl(monkeypatch)
     assert curl.main(["https://api.example.com/"]) == 0
     assert calls[-1][1:] == ["https://api.example.com/"]
     err = capsysbinary.readouterr().err
-    assert err.startswith(b"curl: ignoring the configured proxy: HTTPLIB_PROXY_TYPE") and b"Traceback" not in err
+    assert err.startswith(b"curl: ignoring the configured proxy: SYSHTTP_PROXY_TYPE") and b"Traceback" not in err
     # The fallback cannot proceed without knowing how to speak to the proxy: exit 2.
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", target + "/x"])
-    assert rc == 2 and out.err.startswith(b"curl: (2) HTTPLIB_PROXY_TYPE") and b"Traceback" not in out.err
+    assert rc == 2 and out.err.startswith(b"curl: (2) SYSHTTP_PROXY_TYPE") and b"Traceback" not in out.err
 
 
 # --------------------------------------------------------------------------
@@ -382,8 +382,8 @@ def test_bad_type_with_a_proxy(target, monkeypatch, capsysbinary):
 
 
 def test_fallback_redirect_hop_stays_on_the_proxy(target, proxy, monkeypatch, capsysbinary):
-    monkeypatch.setenv("HTTPLIB_PROXY", "http://" + proxy)
-    monkeypatch.setenv("HTTPLIB_PROXY_AUTH", BASIC)
+    monkeypatch.setenv("SYSHTTP_PROXY", "http://" + proxy)
+    monkeypatch.setenv("SYSHTTP_PROXY_AUTH", BASIC)
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "-L", target + "/redirect"])
     assert rc == 0 and out.out == b"via-proxy"
     assert [path for path, _ in _Proxy.seen] == [target + "/redirect", target + "/final"]
@@ -393,13 +393,13 @@ def test_fallback_redirect_hop_stays_on_the_proxy(target, proxy, monkeypatch, ca
 def test_fallback_redirect_to_a_no_proxy_host_goes_direct_without_the_credential(
     target, proxy, monkeypatch, capsysbinary
 ):
-    monkeypatch.setenv("HTTPLIB_PROXY", "http://" + proxy)
-    monkeypatch.setenv("HTTPLIB_PROXY_AUTH", BEARER)
+    monkeypatch.setenv("SYSHTTP_PROXY", "http://" + proxy)
+    monkeypatch.setenv("SYSHTTP_PROXY_AUTH", BEARER)
     _Proxy.expected = BEARER
     # The first hop is proxied (the target host is not bypassed by name yet);
     # its Location points at 127.0.0.1, which NO_PROXY exempts.
     monkeypatch.setenv("NO_PROXY", "127.0.0.1")
-    monkeypatch.setenv("HTTPLIB_PROXY", "http://" + proxy)
+    monkeypatch.setenv("SYSHTTP_PROXY", "http://" + proxy)
     # Force the first hop through the proxy by asking for a non-bypassed name.
     rc, out = _fallback(
         monkeypatch, capsysbinary, ["-s", "-L", "http://localhost:%s/redirect" % target.rsplit(":", 1)[1]]
@@ -412,9 +412,9 @@ def test_fallback_redirect_to_a_no_proxy_host_goes_direct_without_the_credential
 
 
 def test_fallback_prefix_redirect_is_wrapped_again(target, gateway, monkeypatch, capsysbinary):
-    monkeypatch.setenv("HTTPLIB_PROXY", gateway)
-    monkeypatch.setenv("HTTPLIB_PROXY_TYPE", "prefix:/fetch/")
-    monkeypatch.setenv("HTTPLIB_PROXY_AUTH", BEARER)
+    monkeypatch.setenv("SYSHTTP_PROXY", gateway)
+    monkeypatch.setenv("SYSHTTP_PROXY_TYPE", "prefix:/fetch/")
+    monkeypatch.setenv("SYSHTTP_PROXY_AUTH", BEARER)
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "-L", target + "/redirect"])
     assert rc == 0 and out.out == b"via-gateway"
     assert [path for path, _ in _Gateway.seen] == ["/fetch/" + target + "/redirect", "/fetch/" + target + "/final"]

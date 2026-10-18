@@ -15,9 +15,10 @@ against real curl. Documentation: <https://jose-pr.github.io/curlike/>.
 ## Features
 
 - **Real curl first** — your argv and exit code go through unchanged. The
-  one addition is the proxy from [httplib](https://pypi.org/project/httplib/)'s
-  `HTTPLIB_PROXY`, as `--proxy` plus `--proxy-header`, which real curl would
-  otherwise never read.
+  one addition is the proxy [syshttp](https://github.com/jose-pr/syshttp)
+  picks, as `--proxy` plus `--proxy-header`: `SYSHTTP_PROXY`, or with no
+  proxy variable set the system's own configuration for the URL (PAC and WPAD
+  included), neither of which real curl reads.
 - **A fallback that answers as curl does** — the common surface (request,
   auth, body, output, downloads, TLS, proxies including SOCKS and https
   proxies, redirects, cookies, `-w`, `--retry`). The exit codes and messages
@@ -28,9 +29,9 @@ against real curl. Documentation: <https://jose-pr.github.io/curlike/>.
 - **Your own TLS context** — from Python, `curlike.main(argv, ssl_context=...)`
   runs the curl command line over a context you built: mutual TLS with a
   keystore identity, a cipher list, a pinned protocol version.
-- **Prefix gateways and URL hooks** — httplib's `prefix[:/endpoint]` proxy
-  type and `HTTPLIB_HOOKS_<KEY>_CURL` wrappers work the same way here as in
-  an httplib session.
+- **Prefix gateways and URL hooks** — syshttp's `prefix[:/endpoint]` proxy
+  type and `SYSHTTP_HOOKS_<KEY>_CURL` wrappers work the same way here as in
+  an syshttp session.
 
 ## Installation
 
@@ -81,7 +82,7 @@ and are private.
 
 ## Settings
 
-`<P>` is httplib's prefix (`HTTPLIB` unless `HTTPLIB_PREFIX` says otherwise).
+`<P>` is syshttp's prefix (`SYSHTTP` unless `SYSHTTP_PREFIX` says otherwise).
 
 | Variable | Sets |
 | --- | --- |
@@ -95,7 +96,7 @@ and are private.
 
 ```bash
 dotagents pyvenv            # or any Python 3.9+ virtual environment
-.pyvenv/<tag>/Scripts/python -m pip install -e ../httplib -e ".[dev]"
+.pyvenv/<tag>/Scripts/python -m pip install -e ../syshttp -e ".[dev]"
 .pyvenv/<tag>/Scripts/python -m pytest -q
 ```
 

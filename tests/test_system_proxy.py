@@ -8,7 +8,7 @@ import ssl
 import pytest
 
 from curlike import shim as curl
-from httplib import proxy as agent_proxy
+from syshttp import proxy as agent_proxy
 from test_proxy_auth import BEARER, _capture_real_curl, _fallback, _Proxy, proxy, target  # noqa: F401
 
 
@@ -45,7 +45,7 @@ def no_proxy_vars(monkeypatch):
 def test_the_real_curl_gets_the_systems_proxy(monkeypatch, no_proxy_vars):
     fake = _FakeSystem("http://pac.example:3128")
     monkeypatch.setattr(agent_proxy, "system_proxy_map", lambda: fake)
-    monkeypatch.setenv("HTTPLIB_PROXY_AUTH", BEARER)
+    monkeypatch.setenv("SYSHTTP_PROXY_AUTH", BEARER)
     calls = _capture_real_curl(monkeypatch)
     assert curl.main(["-s", "https://api.example.com/x"]) == 0
     assert calls[-1][1:] == [
@@ -75,7 +75,7 @@ def test_a_direct_answer_or_a_variable_leaves_the_real_curl_alone(monkeypatch, n
 def test_the_fallback_goes_through_the_systems_proxy(target, proxy, monkeypatch, capsysbinary, no_proxy_vars):
     _Proxy.expected = BEARER
     monkeypatch.setattr(agent_proxy, "system_proxy_map", lambda: _FakeSystem("http://" + proxy))
-    monkeypatch.setenv("HTTPLIB_PROXY_AUTH", BEARER)
+    monkeypatch.setenv("SYSHTTP_PROXY_AUTH", BEARER)
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", target + "/x"])
     assert rc == 0 and out.out == b"via-proxy"
     assert _Proxy.seen[-1] == (target + "/x", BEARER)

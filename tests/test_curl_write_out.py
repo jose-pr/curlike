@@ -34,8 +34,8 @@ def test_q_is_a_no_op_in_the_fallback(flag, origin, monkeypatch, capsysbinary):
 @pytest.mark.parametrize("lead", ["-q", "--disable", "-qs"])
 def test_real_curl_keeps_a_leading_q_first(lead, monkeypatch):
     calls = _capture_real_curl(monkeypatch)
-    monkeypatch.setenv("HTTPLIB_PROXY", "http://proxy.example:3128")
-    monkeypatch.setenv("HTTPLIB_PROXY_AUTH", BEARER)
+    monkeypatch.setenv("SYSHTTP_PROXY", "http://proxy.example:3128")
+    monkeypatch.setenv("SYSHTTP_PROXY_AUTH", BEARER)
     curl.main([lead, "https://api.example.com/"])
     assert calls[-1][1] == lead
     assert calls[-1][2:4] == ["--proxy", "http://proxy.example:3128"]

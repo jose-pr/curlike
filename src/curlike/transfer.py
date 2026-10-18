@@ -13,8 +13,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from httplib import proxy as agent_proxy
-from httplib.retry import retry_after
+from syshttp import proxy as agent_proxy
+from syshttp.retry import retry_after
 
 from . import compat
 from .body import FORM_CONTENT_TYPE

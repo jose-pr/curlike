@@ -14,8 +14,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 
 from test_proxy_auth import BEARER, _clean_env, _fallback  # noqa: F401  (autouse fixture reused)
-from httplib.cookies import CookieSpec
-from httplib.jar import MemoryCookieJar, MemoryTokenJar
+from syshttp.cookies import CookieSpec
+from syshttp.jar import MemoryCookieJar, MemoryTokenJar
 
 
 def _other_host():
@@ -134,8 +134,8 @@ def origin():
 @pytest.fixture()
 def proxy(monkeypatch):
     httpd = _serve(_Proxy, OTHER_HOST)
-    monkeypatch.setenv("HTTPLIB_PROXY", "http://%s:%d" % (OTHER_HOST, httpd.server_address[1]))
-    monkeypatch.setenv("HTTPLIB_PROXY_AUTH", BEARER)
+    monkeypatch.setenv("SYSHTTP_PROXY", "http://%s:%d" % (OTHER_HOST, httpd.server_address[1]))
+    monkeypatch.setenv("SYSHTTP_PROXY_AUTH", BEARER)
     try:
         yield
     finally:
@@ -146,9 +146,9 @@ def proxy(monkeypatch):
 @pytest.fixture()
 def gateway(monkeypatch):
     httpd = _serve(_Gateway, OTHER_HOST)
-    monkeypatch.setenv("HTTPLIB_PROXY", "http://%s:%d" % (OTHER_HOST, httpd.server_address[1]))
-    monkeypatch.setenv("HTTPLIB_PROXY_TYPE", "prefix:/fetch/")
-    monkeypatch.setenv("HTTPLIB_PROXY_AUTH", BEARER)
+    monkeypatch.setenv("SYSHTTP_PROXY", "http://%s:%d" % (OTHER_HOST, httpd.server_address[1]))
+    monkeypatch.setenv("SYSHTTP_PROXY_TYPE", "prefix:/fetch/")
+    monkeypatch.setenv("SYSHTTP_PROXY_AUTH", BEARER)
     try:
         yield
     finally:

@@ -75,7 +75,7 @@ def origin():
 def _run(command, argv, take=0, keep=False, version=None):
     """``command`` over a pipe whose reader takes ``take`` bytes and closes
     (``keep``: reads it all). ``(exit code, stderr lines)``."""
-    env = {k: v for k, v in os.environ.items() if not k.lower().endswith("_proxy") and k != "HTTPLIB_PROXY"}
+    env = {k: v for k, v in os.environ.items() if not k.lower().endswith("_proxy") and k != "SYSHTTP_PROXY"}
     env["PYTHONPATH"] = os.pathsep.join([str(LIB), env.get("PYTHONPATH", "")])
     env["NO_PROXY"] = env["no_proxy"] = "127.0.0.1"
     env.pop("COLUMNS", None)  # with no terminal either, curl wraps its notices at 79

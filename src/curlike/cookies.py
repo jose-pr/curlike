@@ -1,6 +1,6 @@
 """Cookie options: ``-b`` (a string, or a Netscape jar filtered to the URL)
 and ``-c`` (the response's cookies written back as a jar) -- on
-``httplib.cookies``, the same reading, matching and writing the session
+``syshttp.cookies``, the same reading, matching and writing the session
 toolkit uses."""
 
 import os
@@ -8,7 +8,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Optional
 
-from httplib.cookies import cookie_applies, load_netscape, save_netscape, set_cookie_specs
+from syshttp.cookies import cookie_applies, load_netscape, save_netscape, set_cookie_specs
 
 from .args import Group
 

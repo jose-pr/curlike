@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 name = "curlike"
 version = "0.1.0.dev0"
 authors = [{ name = "jose-pr", email = "jose-pr@coqui.dev" }]
-description = "A drop-in curl: the real curl when there is one, with httplib's proxy and hooks applied, else a curl-compatible command over the standard library"
+description = "A drop-in curl: the real curl when there is one, with syshttp's proxy and hooks applied, else a curl-compatible command over the standard library"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
@@ -27,7 +27,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "httplib>=0.1.0.dev0,<0.2",
+    "syshttp>=0.1.0.dev0,<0.2",
     # duho.Meta replaced duho.NS in 0.7.
     "duho>=0.7.4,<0.8",
 ]

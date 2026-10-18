@@ -581,12 +581,12 @@ def test_curl_ca_bundle_is_honoured(pki, tls_origin, monkeypatch, capsysbinary):
 
 
 # --------------------------------------------------------------------------- #
-# shared with httplib: one implementation for the session and the fallback
+# shared with syshttp: one implementation for the session and the fallback
 # --------------------------------------------------------------------------- #
 
 
 def test_set_cookie_specs_and_cookie_applies():
-    from httplib.cookies import CookieSpec, cookie_applies, set_cookie_specs
+    from syshttp.cookies import CookieSpec, cookie_applies, set_cookie_specs
 
     now = 1_000_000_000.0
     specs = dict(
@@ -619,7 +619,7 @@ def test_set_cookie_specs_and_cookie_applies():
 
 
 def test_netscape_round_trip_keeps_httponly_and_the_flag(tmp_path):
-    from httplib.cookies import CookieSpec, load_netscape, save_netscape
+    from syshttp.cookies import CookieSpec, load_netscape, save_netscape
 
     jar = tmp_path / "jar.txt"
     rows = [
@@ -634,10 +634,10 @@ def test_netscape_round_trip_keeps_httponly_and_the_flag(tmp_path):
 
 
 def test_one_proxy_plan_for_both_paths(monkeypatch):
-    from httplib import proxy as agent_proxy
+    from syshttp import proxy as agent_proxy
 
-    monkeypatch.setenv("HTTPLIB_PROXY", "http://agent:pw@gw.example:8080")
-    monkeypatch.setenv("HTTPLIB_PROXY_TYPE", "prefix:/fetch/")
+    monkeypatch.setenv("SYSHTTP_PROXY", "http://agent:pw@gw.example:8080")
+    monkeypatch.setenv("SYSHTTP_PROXY_TYPE", "prefix:/fetch/")
     plan = agent_proxy.plan()
     assert plan.proxy == "http://gw.example:8080" and plan.endpoint == "/fetch/"
     assert plan.gateway_base == "http://gw.example:8080/fetch/" and plan.authorization.startswith("Basic ")
