@@ -1,0 +1,3 @@
+# `curlike.shim`
+
+::: curlike.shim
