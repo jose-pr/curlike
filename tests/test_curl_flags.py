@@ -111,3 +111,37 @@ def test_pins_parse_from_hashes_and_reject_garbage():
         connector.parse_pins("sha256//not base64!")
     with pytest.raises(ValueError):
         connector.parse_pins("sha256//" + "A" * 43 + "=;md5//x")
+
+
+def test_local_port_moves_on_when_connect_finds_the_port_in_use(monkeypatch):
+    """Windows reports a local port whose last connection to the same address
+    is in TIME_WAIT at connect() (WSAEADDRINUSE), not at bind(): curl tries
+    the next port of the range, and so does the fallback."""
+    import errno
+    import socket
+    import threading
+
+    from curlike.connector import Connector
+
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen(1)
+    threading.Thread(target=lambda: server.accept()[0].close(), daemon=True).start()
+    real_connect = socket.socket.connect
+    first = []
+
+    class _Socket(socket.socket):
+        def connect(self, address):
+            if not first:
+                first.append(self.getsockname()[1])
+                raise OSError(errno.EADDRINUSE, "Only one usage of each socket address")
+            return real_connect(self, address)
+
+    monkeypatch.setattr(socket, "socket", _Socket)
+    low = 47400
+    sock = Connector(ports=(low, low + 20)).create_connection(server.getsockname())
+    try:
+        assert first and sock.getsockname()[1] > first[0], "the next port of the range"
+    finally:
+        sock.close()
+        server.close()

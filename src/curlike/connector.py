@@ -145,6 +145,11 @@ def _socks5(sock, socks, host, port):
 _BIND_ERRNOS = {errno.EADDRINUSE, errno.EADDRNOTAVAIL, errno.EACCES, 10013, 10048, 10049}
 
 
+def _in_use(exc):
+    """The local address (port) is in use: EADDRINUSE, or WSAEADDRINUSE."""
+    return getattr(exc, 'errno', None) == errno.EADDRINUSE or getattr(exc, 'winerror', None) == 10048
+
+
 def parse_local_port(spec):
     """``N`` or ``N-M`` (curl's ``--local-port``) -> ``(low, high)``."""
     low, _, high = (spec or '').partition('-')
@@ -459,13 +464,17 @@ class Connector(object):
                 except OSError as exc:
                     sock.close()
                     last = exc
-                    if (
-                        exc is bind_error
-                        and self.ports
-                        and (
-                            getattr(exc, 'errno', None) in _BIND_ERRNOS
-                            or getattr(exc, 'winerror', None) in _BIND_ERRNOS
+                    if self.ports and (
+                        (
+                            exc is bind_error
+                            and (
+                                getattr(exc, 'errno', None) in _BIND_ERRNOS
+                                or getattr(exc, 'winerror', None) in _BIND_ERRNOS
+                            )
                         )
+                        # Windows reports a port whose previous connection to
+                        # this address is in TIME_WAIT at connect(), not bind().
+                        or (exc is not bind_error and _in_use(exc))
                     ):
                         continue  # the next port of the range
                     break  # the next address
