@@ -17,20 +17,28 @@ so the stdlib-only modules (``routing``) load without it.
 import sys
 
 
-def run_fallback(argv):
-    """Parse ``argv`` and run it. A refusal propagates: ``NotImplementedError``
-    (an unsupported flag), ``ValueError`` (a conflict, a bad proxy
-    configuration), ``SystemExit`` (a usage error, ``--help``)."""
+def run_fallback(argv, *, ssl_context=None, proxy_ssl_context=None):
+    """Parse ``argv`` and run it. ``ssl_context`` / ``proxy_ssl_context`` --
+    a caller's ``ssl.SSLContext`` for every https origin / an https://
+    proxy, used as given in place of what ``-k``, ``--cacert``, ``--cert``,
+    ``--ciphers``, ``--tlsv1.x`` (and their ``--proxy-*`` twins) would build;
+    those flags beside it are a conflict. A refusal propagates:
+    ``NotImplementedError`` (an unsupported flag), ``ValueError`` (a
+    conflict, a bad proxy configuration), ``TypeError`` (a context that is
+    not an ``ssl.SSLContext``), ``SystemExit`` (a usage error, ``--help``)."""
     from ._duho import duho
     from .argv import attach_values
     from .options import CurlCmd
 
-    rc = duho.parse(CurlCmd, attach_values(argv))()
+    command = duho.parse(CurlCmd, attach_values(argv))
+    command.use_contexts(ssl_context, proxy_ssl_context)
+    rc = command()
     return 0 if rc is None else rc
 
 
-def main(argv=None):
-    """The command: curl's exit code, a refusal as curl's one-line exit 2."""
+def main(argv=None, *, ssl_context=None, proxy_ssl_context=None):
+    """The command: curl's exit code, a refusal as curl's one-line exit 2.
+    ``ssl_context`` / ``proxy_ssl_context`` as in :func:`run_fallback`."""
     argv = list(sys.argv[1:] if argv is None else argv)
     try:
         from . import _duho  # noqa: F401  (no duho: one line, not a traceback)
@@ -40,7 +48,7 @@ def main(argv=None):
     from .errors import EarlyExit
 
     try:
-        return run_fallback(argv)
+        return run_fallback(argv, ssl_context=ssl_context, proxy_ssl_context=proxy_ssl_context)
     except EarlyExit as exc:
         print('curl: %s' % exc, file=sys.stderr)
         return exc.code

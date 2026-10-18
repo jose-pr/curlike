@@ -150,8 +150,44 @@ class UnusableContext(object):
         raise self.error
 
 
+#: The origin flags a caller's ``ssl_context`` replaces: (attribute, flag).
+ORIGIN_TLS_FLAGS = (
+    ('insecure', '-k'),
+    ('cacert', '--cacert'),
+    ('capath', '--capath'),
+    ('cert', '--cert'),
+    ('key', '--key'),
+    ('pass_', '--pass'),
+    ('ciphers', '--ciphers'),
+    ('crlfile', '--crlfile'),
+    ('tlsv1', '--tlsv1'),
+    ('tlsv1_0', '--tlsv1.0'),
+    ('tlsv1_1', '--tlsv1.1'),
+    ('tlsv1_2', '--tlsv1.2'),
+    ('tlsv1_3', '--tlsv1.3'),
+    ('tls_max', '--tls-max'),
+)
+#: The same for a caller's ``proxy_ssl_context``.
+PROXY_TLS_FLAGS = (
+    ('proxy_insecure', '--proxy-insecure'),
+    ('proxy_cacert', '--proxy-cacert'),
+    ('proxy_capath', '--proxy-capath'),
+    ('proxy_cert', '--proxy-cert'),
+    ('proxy_key', '--proxy-key'),
+    ('proxy_pass', '--proxy-pass'),
+    ('proxy_ciphers', '--proxy-ciphers'),
+    ('proxy_crlfile', '--proxy-crlfile'),
+    ('proxy_tlsv1', '--proxy-tlsv1'),
+)
+
+
 class TLSArgs(Group):
     """Server verification and the client certificate."""
+
+    # A caller's own contexts (``curlike.run_fallback(ssl_context=...)``),
+    # used as given in place of the ones the flags would build. Not options.
+    caller_ssl_context = None
+    caller_proxy_ssl_context = None
 
     crlfile: Arg[Optional[str], Meta(metavar='FILE')] = None
     "Check the server's chain against this certificate revocation list (PEM)"
@@ -341,11 +377,42 @@ class TLSArgs(Group):
             if path and not os.path.exists(path):
                 raise EarlyExit(EXIT_USAGE, "The file '%s' provided to %s does not exist" % (path, flag))
 
+    def use_contexts(self, ssl_context=None, proxy_ssl_context=None):
+        """Use a caller's contexts in place of the flags'. A flag the context
+        replaces (``-k``, ``--cacert``, ``--cert``, ``--ciphers``, ``--tlsv1.2``,
+        ...) given beside it is a ``ValueError`` naming it: the command would
+        otherwise ignore it."""
+        for context, flags, what in (
+            (ssl_context, ORIGIN_TLS_FLAGS, 'ssl_context'),
+            (proxy_ssl_context, PROXY_TLS_FLAGS, 'proxy_ssl_context'),
+        ):
+            if context is None:
+                continue
+            if not isinstance(context, ssl.SSLContext):
+                raise TypeError('%s must be an ssl.SSLContext, not %s' % (what, type(context).__name__))
+            given = [flag for attr, flag in flags if getattr(self, attr, None)]
+            if given:
+                raise ValueError('%s replaces %s: give one or the other' % (what, ', '.join(given)))
+        self.caller_ssl_context = ssl_context
+        self.caller_proxy_ssl_context = proxy_ssl_context
+
     def proxy_tls(self):
         """:class:`ProxyTLS` for an https:// proxy; a file that cannot be used
         fails at the proxy's handshake, as the origin's do at its own."""
+        if self.caller_proxy_ssl_context is not None:
+            context = self.caller_proxy_ssl_context
+        else:
+            context = self._proxy_context()
+        from .connector import parse_pins
+
+        pins = parse_pins(self.proxy_pinnedpubkey) if self.proxy_pinnedpubkey else None
+        if self.proxy_insecure and not compat.pins_proxy_when_insecure():
+            pins = None  # before curl 8.10, --proxy-insecure turns the pin off too
+        return ProxyTLS(context, pins)
+
+    def _proxy_context(self):
         try:
-            context = build_ssl_context(
+            return build_ssl_context(
                 self.proxy_insecure,
                 cacert=self.proxy_cacert,
                 capath=self.proxy_capath,
@@ -357,15 +424,11 @@ class TLSArgs(Group):
                 crlfile=self.proxy_crlfile,
             )
         except LocalError as exc:
-            context = UnusableContext(exc)
-        from .connector import parse_pins
-
-        pins = parse_pins(self.proxy_pinnedpubkey) if self.proxy_pinnedpubkey else None
-        if self.proxy_insecure and not compat.pins_proxy_when_insecure():
-            pins = None  # before curl 8.10, --proxy-insecure turns the pin off too
-        return ProxyTLS(context, pins)
+            return UnusableContext(exc)
 
     def ssl_context(self):
+        if self.caller_ssl_context is not None:
+            return self.caller_ssl_context
         floor, top = self.tls_versions()
         return build_ssl_context(
             self.insecure,

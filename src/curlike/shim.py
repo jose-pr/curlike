@@ -231,11 +231,16 @@ def maybe_run_hook(argv, entry=None):
     return subprocess.run([*command, *argv], env=env).returncode
 
 
-def main(argv=None, *, entry=None):
+def main(argv=None, *, entry=None, ssl_context=None, proxy_ssl_context=None):
     """The shim: curl's exit code. ``entry`` -- the executable acting as this
     curl (a launcher's own path), skipped when looking for the real curl and
-    handed to hook wrappers; default :func:`default_entry`."""
+    handed to hook wrappers; default :func:`default_entry`.
+    ``ssl_context`` / ``proxy_ssl_context`` -- a caller's TLS contexts
+    (``curlike.run_fallback``). Neither the real curl nor a hook wrapper can
+    be given one, so with a context the fallback serves the request."""
     argv = list(sys.argv[1:] if argv is None else argv)
+    if ssl_context is not None or proxy_ssl_context is not None:
+        return fallback_main(argv, ssl_context=ssl_context, proxy_ssl_context=proxy_ssl_context)
     entry = entry if entry is not None else default_entry()
     if not shim_enabled():
         return run_real_curl_as_typed(argv, entry)
