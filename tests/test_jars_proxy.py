@@ -3,9 +3,11 @@ cookies (the URL the caller asked for) under a prefix gateway, never the
 gateway's.
 
 Loopback only: the origin listens on 127.0.0.1, the proxy and the gateway on
-127.0.0.2, so a jar keyed by host can tell them apart.
+127.0.0.2 (``localhost`` where that is not routed), so a jar keyed by host
+can tell them apart.
 """
 
+import socket
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -15,7 +17,24 @@ from test_proxy_auth import BEARER, _clean_env, _fallback  # noqa: F401  (autous
 from httplib.cookies import CookieSpec
 from httplib.jar import MemoryCookieJar, MemoryTokenJar
 
-ORIGIN_HOST, OTHER_HOST = "127.0.0.1", "127.0.0.2"
+
+def _other_host():
+    """A second loopback name for the proxy and the gateway: 127.0.0.2 where
+    the system routes it (Linux, Windows), else ``localhost`` -- macOS has no
+    loopback alias beyond 127.0.0.1 unless one is configured."""
+    probe = socket.socket()
+    try:
+        probe.bind(("127.0.0.2", 0))
+        return "127.0.0.2"
+    except OSError:
+        return "localhost"
+    finally:
+        probe.close()
+
+
+ORIGIN_HOST, OTHER_HOST = "127.0.0.1", _other_host()
+#: What each name binds: ``localhost`` is served on 127.0.0.1.
+_BIND = {"localhost": "127.0.0.1"}
 
 
 def _answer(handler, body, cookie=True):
@@ -97,7 +116,7 @@ class _Server(HTTPServer):
 
 def _serve(handler, host):
     handler.seen = []
-    httpd = _Server((host, 0), handler)
+    httpd = _Server((_BIND.get(host, host), 0), handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return httpd
 
