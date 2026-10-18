@@ -1,0 +1,72 @@
+[build-system]
+# 1.27 is the first hatchling that reads the PEP 639 license fields below.
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "curlike"
+version = "0.1.0.dev0"
+authors = [{ name = "jose-pr", email = "jose-pr@coqui.dev" }]
+description = "A drop-in curl: the real curl when there is one, with httplib's proxy and hooks applied, else a curl-compatible command over the standard library"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Operating System :: OS Independent",
+    "Topic :: Internet :: WWW/HTTP",
+    "Typing :: Typed",
+]
+dependencies = [
+    "httplib>=0.1.0.dev0,<0.2",
+    # duho.Meta replaced duho.NS in 0.7.
+    "duho>=0.7.4,<0.8",
+]
+
+[project.optional-dependencies]
+# netimps backs --dns-servers, --dns-ipv4-addr, --dns-ipv6-addr,
+# --dns-interface, --doh-url and --interface by name; 0.4.1 is the release
+# those flags are tested with (curlike.netconn checks it at run time).
+dns = ["netimps>=0.4.1,<0.5"]
+dev = ["curlike[dns]", "build", "pytest", "black"]
+docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]"]
+
+[project.scripts]
+pycurl = "curlike.shim:main"
+
+[project.urls]
+Homepage = "https://github.com/jose-pr/curlike"
+Documentation = "https://jose-pr.github.io/curlike/"
+Issues = "https://github.com/jose-pr/curlike/issues"
+
+[tool.hatch.build.targets.sdist]
+exclude = ["/.*", "*.local.*", "/AGENTS.md", "CLAUDE*"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/curlike"]
+exclude = ["*.local.*", "CLAUDE*"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"README.md" = "curlike/README.md"
+
+[tool.black]
+target-version = ["py39"]
+line-length = 120
+skip-string-normalization = true
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "tests"]
+testpaths = ["tests"]
+# Warnings are errors, except ResourceWarning: the fake servers of the parity
+# and SOCKS tests leave sockets for the collector, and the fallback does not
+# close the body of an HTTPError it answers with.
+filterwarnings = ["error", "default::ResourceWarning"]

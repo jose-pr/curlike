@@ -1,0 +1,5 @@
+# One line ending for every text file, on every platform: LF. With this in the
+# repo no tool can leave a file half-converted (mixed CRLF/LF) at commit time.
+# A file a platform REQUIRES in CRLF (a .cmd that needs it, a signed manifest)
+# is named below as an exception, never by weakening the default.
+* text=auto eol=lf
