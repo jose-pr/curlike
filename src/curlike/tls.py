@@ -71,7 +71,9 @@ def build_ssl_context(
     if not (cacert or capath):
         cacert = os.environ.get(CA_BUNDLE_VAR) or None
     if insecure:
-        ctx = new_os_context()
+        # A plain ssl context: nothing is verified, so the OS verifier has no
+        # part, and macOS's (truststore) still evaluates the chain under CERT_NONE.
+        ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
     elif cacert or capath:

@@ -46,6 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- `-k`, `--proxy-insecure` and `--doh-insecure` build a plain `ssl` context. The OS verifier
+  (truststore) on macOS still evaluated the chain under them and failed with 60.
 - `--local-port` with a range moves to the next port when `connect()` finds
   the port in use. Windows reports a port whose last connection to the same
   address is in TIME_WAIT there, not at `bind()`, and the fallback used to

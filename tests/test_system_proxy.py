@@ -92,3 +92,13 @@ def test_crlfile_keeps_a_context_that_checks_crls(monkeypatch):
     pem = Path(__file__).parent / "data" / "ca.pem"  # load_verify_locations reads PEM; the type is what matters
     ctx = tls.build_ssl_context(False, crlfile=str(pem))
     assert type(ctx) is ssl.SSLContext and ctx.verify_flags & ssl.VERIFY_CRL_CHECK_CHAIN
+
+
+def test_insecure_never_uses_the_os_verifier(monkeypatch):
+    """-k verifies nothing; macOS's verifier (truststore) still evaluates the
+    chain under CERT_NONE, so -k gets a plain ssl context."""
+    from curlike import tls
+
+    monkeypatch.setattr(tls, "new_os_context", lambda *a, **k: pytest.fail("-k must not get the OS verifier"))
+    ctx = tls.build_ssl_context(True)
+    assert type(ctx) is ssl.SSLContext and ctx.verify_mode == ssl.CERT_NONE and not ctx.check_hostname
