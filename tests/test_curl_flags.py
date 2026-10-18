@@ -126,7 +126,8 @@ def test_local_port_moves_on_when_connect_finds_the_port_in_use(monkeypatch):
     server = socket.socket()
     server.bind(("127.0.0.1", 0))
     server.listen(1)
-    threading.Thread(target=lambda: server.accept()[0].close(), daemon=True).start()
+    accepter = threading.Thread(target=lambda: server.accept()[0].close(), daemon=True)
+    accepter.start()
     real_connect = socket.socket.connect
     first = []
 
@@ -144,4 +145,5 @@ def test_local_port_moves_on_when_connect_finds_the_port_in_use(monkeypatch):
         assert first and sock.getsockname()[1] > first[0], "the next port of the range"
     finally:
         sock.close()
+        accepter.join(5)  # before the server closes under a pending accept()
         server.close()
