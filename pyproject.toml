@@ -27,7 +27,8 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "syshttp>=0.1.0.dev0,<0.2",
+    # 0.1.0.dev1: proxy.configured_proxy_url() and plan(url=...), the system proxy.
+    "syshttp>=0.1.0.dev1,<0.2",
     # duho.Meta replaced duho.NS in 0.7.
     "duho>=0.7.4,<0.8",
 ]
