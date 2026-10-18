@@ -21,11 +21,13 @@ with exit 2.
 ## Entry points
 
 ```python
-curlike.shim.main(argv: list[str] | None = None, *, entry: str | None = None) -> int
+curlike.shim.main(argv: list[str] | None = None, *, entry: str | None = None,
+                  ssl_context: ssl.SSLContext | None = None,
+                  proxy_ssl_context: ssl.SSLContext | None = None) -> int
 curlike.shim.default_entry() -> str | None
 curlike.shim.find_real_curl(entry: str | None = None) -> str | None
-curlike.main(argv: list[str] | None = None) -> int          # the fallback only
-curlike.run_fallback(argv: list[str]) -> int                 # raises instead of printing
+curlike.main(argv=None, *, ssl_context=None, proxy_ssl_context=None) -> int   # the fallback only
+curlike.run_fallback(argv, *, ssl_context=None, proxy_ssl_context=None) -> int  # raises instead of printing
 ```
 
 - `shim.main` is the drop-in curl. It runs, in order: a matching URL hook's
@@ -44,6 +46,18 @@ curlike.run_fallback(argv: list[str]) -> int                 # raises instead of
   and curl's exit codes. `run_fallback` raises `NotImplementedError` (an
   unsupported flag), `ValueError` (a conflict or a bad proxy setting) and
   `SystemExit` (usage, `--help`).
+- `ssl_context` is a caller's `ssl.SSLContext`, used as given for every
+  https origin: its trust store, `verify_mode`, client identity (mutual TLS,
+  including a key held in an OS keystore), ciphers and protocol versions
+  decide. `proxy_ssl_context` does the same for an `https://` proxy. A flag
+  the context replaces, given beside it, is exit 2 (`curl: (2) ssl_context
+  replaces --cacert: give one or the other`). For the origin those flags are
+  `-k`, `--cacert`, `--capath`, `--cert`, `--key`, `--pass`, `--ciphers`,
+  `--crlfile`, `--tlsv1*` and `--tls-max`; the proxy has their `--proxy-*`
+  twins. `--pinnedpubkey` still applies. A context that is not an
+  `ssl.SSLContext` raises `TypeError`. With a context, `shim.main` serves
+  the request from the fallback, since neither the real curl nor a hook
+  wrapper can be given one.
 
 ## Command line
 

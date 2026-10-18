@@ -25,6 +25,9 @@ against real curl. Documentation: <https://jose-pr.github.io/curlike/>.
   configurable.
 - **Fails loud** — an option it does not implement is `curl: (2) Unsupported
   options: …`, never silently ignored.
+- **Your own TLS context** — from Python, `curlike.main(argv, ssl_context=...)`
+  runs the curl command line over a context you built: mutual TLS with a
+  keystore identity, a cipher list, a pinned protocol version.
 - **Prefix gateways and URL hooks** — httplib's `prefix[:/endpoint]` proxy
   type and `HTTPLIB_HOOKS_<KEY>_CURL` wrappers work the same way here as in
   an httplib session.
@@ -45,6 +48,17 @@ pip install curlike
 from curlike.shim import main
 
 rc = main(["-s", "-o", "page.html", "https://example.com/"])
+```
+
+Mutual TLS with a context of your own (the fallback serves it):
+
+```python
+import ssl
+import curlike
+
+ctx = ssl.create_default_context()
+ctx.load_cert_chain("client.pem", "client.key")
+rc = curlike.main(["-s", "https://mtls.example/"], ssl_context=ctx)
 ```
 
 ## Command line

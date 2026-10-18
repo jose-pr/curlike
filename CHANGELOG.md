@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   (`curlike.shim.main`). `main(argv=None, *, entry=None)` takes the
   executable acting as this curl, whose directory is skipped when looking for
   the real curl and which hook wrappers receive as `<P>_HOOK_CURL`.
+- `curlike.main()`, `curlike.run_fallback()` and `curlike.shim.main()` take
+  `ssl_context=` / `proxy_ssl_context=`: a caller's `ssl.SSLContext` used as
+  given for every https origin or an `https://` proxy (mutual TLS, ciphers,
+  protocol versions). The TLS flags it replaces are refused beside it (exit 2).
 
 ### Changed
 
