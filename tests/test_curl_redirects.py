@@ -2,6 +2,7 @@
 go to the next hop only on the same origin unless --location-trusted, a -b
 FILE's cookies are re-chosen per hop from the jar, and the method/body rules
 of 301/302/303/307/308, --post30x and -X hold."""
+
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -27,8 +28,10 @@ class _Hop(BaseHTTPRequestHandler):
             self.end_headers()
             return
         _Hop.seen[self.server.server_address[1]] = {
-            "method": self.command, "body": body.decode(),
-            "auth": self.headers.get("Authorization"), "cookie": self.headers.get("Cookie"),
+            "method": self.command,
+            "body": body.decode(),
+            "auth": self.headers.get("Authorization"),
+            "cookie": self.headers.get("Cookie"),
         }
         self.send_response(200)
         self.send_header("Content-Length", "0")
@@ -83,9 +86,16 @@ def test_credentials_follow_only_the_same_origin(label, trusted, hosts, monkeypa
 def test_a_cookie_file_is_rechosen_per_hop(hosts, tmp_path, monkeypatch, capsysbinary):
     a, b = hosts
     jar = tmp_path / "jar.txt"
-    jar.write_text("\n".join("\t".join(row) for row in [
-        ["127.0.0.1", "FALSE", "/", "FALSE", "0", "shared", "1"],
-    ]) + "\n", encoding="utf-8")
+    jar.write_text(
+        "\n".join(
+            "\t".join(row)
+            for row in [
+                ["127.0.0.1", "FALSE", "/", "FALSE", "0", "shared", "1"],
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     _fallback(monkeypatch, capsysbinary, ["-s", "-L", "-b", str(jar), "%s/r/302/%s/landed" % (a, b)])
     assert _landed(b)["cookie"] == "shared=1", "the jar's rows apply to the next host by the jar's rules"
 
@@ -104,7 +114,9 @@ def test_redirect_methods_and_bodies(flags, expected, hosts, monkeypatch, capsys
     got = []
     for code in (301, 302, 303, 307, 308):
         _Hop.seen = {}
-        rc, _ = _fallback(monkeypatch, capsysbinary, ["-s", "-L", "-d", "x=1", *flags, "%s/r/%d/%s/landed" % (a, code, a)])
+        rc, _ = _fallback(
+            monkeypatch, capsysbinary, ["-s", "-L", "-d", "x=1", *flags, "%s/r/%d/%s/landed" % (a, code, a)]
+        )
         hop = _landed(a)
         got.append("%s/%s" % (hop.get("method"), hop.get("body")))
     assert got == expected

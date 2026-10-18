@@ -1,6 +1,7 @@
 """The urllib side of the proxy decision: the handler that applies an
 ``httplib.proxy.ProxyPlan`` -- the same plan the session's adapter applies --
 to every hop, and the caller's view of a URL a prefix gateway rewrote."""
+
 import re
 import urllib.parse
 import urllib.request
@@ -42,7 +43,7 @@ def caller_url(url, plan):
     ``url_effective``)."""
     base = plan.gateway_base if plan is not None else None
     if base and url.startswith(base):
-        url = url[len(base):]
+        url = url[len(base) :]
     try:
         parts = urllib.parse.urlsplit(url)
     except ValueError:
@@ -67,8 +68,9 @@ class AgentProxyHandler(urllib.request.BaseHandler):
 
     handler_order = 90  # before the (empty) ProxyHandler at 100
 
-    def __init__(self, plan, tunnel_http=False, headers=None, socks=None, preproxy=None, proxy_tls=None,
-                 proxy_auth=None):
+    def __init__(
+        self, plan, tunnel_http=False, headers=None, socks=None, preproxy=None, proxy_tls=None, proxy_auth=None
+    ):
         self.plan = plan
         self.tunnel_http = tunnel_http  # -p: CONNECT for http URLs too
         self.headers = dict(headers or {})  # --proxy-header: to the proxy only
@@ -115,4 +117,3 @@ class AgentProxyHandler(urllib.request.BaseHandler):
 
     http_request = _apply
     https_request = _apply
-

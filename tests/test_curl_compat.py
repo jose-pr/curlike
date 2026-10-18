@@ -1,6 +1,7 @@
 """HTTPLIB_CURL_COMPAT: the curl version the fallback answers as where versions
 disagree (``curlike.compat``). The parity tests prove each answer against
 real curl; these pin the setting itself."""
+
 import pytest
 
 from curlike import shim as curl
@@ -13,17 +14,31 @@ def _fresh(monkeypatch):
     monkeypatch.delenv(compat.var(), raising=False)
 
 
-@pytest.mark.parametrize("text,expected", [
-    ("8.19", (8, 19, 0)), ("8.19.0", (8, 19, 0)), ("8.22.1", (8, 22, 1)),
-    ("curl 8.21.0 (aarch64-w64-mingw32) libcurl/8.21.0", (8, 21, 0)), ("", None), ("x", None),
-])
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("8.19", (8, 19, 0)),
+        ("8.19.0", (8, 19, 0)),
+        ("8.22.1", (8, 22, 1)),
+        ("curl 8.21.0 (aarch64-w64-mingw32) libcurl/8.21.0", (8, 21, 0)),
+        ("", None),
+        ("x", None),
+    ],
+)
 def test_versions_parse(text, expected):
     assert compat.parse_version(text) == expected
 
 
-@pytest.mark.parametrize("version,code,first", [
-    ("8.17", 56, False), ("8.18", 56, True), ("8.19.9", 56, True), ("8.20", 7, True), ("8.22", 7, True),
-])
+@pytest.mark.parametrize(
+    "version,code,first",
+    [
+        ("8.17", 56, False),
+        ("8.18", 56, True),
+        ("8.19.9", 56, True),
+        ("8.20", 7, True),
+        ("8.22", 7, True),
+    ],
+)
 def test_the_measured_boundaries(monkeypatch, version, code, first):
     monkeypatch.setenv(compat.var(), version)
     assert compat.connect_refused_code() == code
@@ -32,10 +47,16 @@ def test_the_measured_boundaries(monkeypatch, version, code, first):
     assert compat.rejects_unknown_protocols() is first
 
 
-@pytest.mark.parametrize("version,large,pins,ignores_netrc,socks,port", [
-    ("8.5", 27, False, True, 6, 0), ("8.7.1", 100, False, True, 6, 0), ("8.10", 100, True, True, 6, -1),
-    ("8.12", 100, True, False, 6, -1), ("8.14", 100, True, False, 5, -1),
-])
+@pytest.mark.parametrize(
+    "version,large,pins,ignores_netrc,socks,port",
+    [
+        ("8.5", 27, False, True, 6, 0),
+        ("8.7.1", 100, False, True, 6, 0),
+        ("8.10", 100, True, True, 6, -1),
+        ("8.12", 100, True, False, 6, -1),
+        ("8.14", 100, True, False, 5, -1),
+    ],
+)
 def test_the_older_boundaries(monkeypatch, version, large, pins, ignores_netrc, socks, port):
     monkeypatch.setenv(compat.var(), version)
     assert compat.too_large()[0] == large and compat.no_port() == port

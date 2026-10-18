@@ -5,6 +5,7 @@ gateway's.
 Loopback only: the origin listens on 127.0.0.1, the proxy and the gateway on
 127.0.0.2, so a jar keyed by host can tell them apart.
 """
+
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 

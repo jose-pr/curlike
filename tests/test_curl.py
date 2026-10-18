@@ -3,6 +3,7 @@
 No real internet: the fallback is exercised against a local HTTP fixture server
 bound to 127.0.0.1; the real-curl path is mocked (shutil.which + subprocess.run).
 """
+
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -168,4 +169,5 @@ def test_ssl_context_insecure(monkeypatch):
 
     ctx = build_ssl_context(insecure=True)
     import ssl
+
     assert ctx.verify_mode == ssl.CERT_NONE

@@ -1,6 +1,7 @@
 """The curl fallback's download, auth, TLS, connection and alias options.
 Expected values were recorded from curl 8.21 against the same kind of
 loopback server (range, ETag, Last-Modified, Content-Disposition, Digest)."""
+
 import base64
 import os
 import socket
@@ -48,8 +49,12 @@ class _Files(BaseHTTPRequestHandler):
             start = int(rng[6:].split("-")[0] or 0)
             if start >= len(BODY):
                 return self._send(416, b"", [("Content-Range", "bytes */%d" % len(BODY))])
-            return self._send(206, BODY[start:], [("Content-Range", "bytes %d-%d/%d" % (start, len(BODY) - 1, len(BODY)))])
-        extra = [("Content-Disposition", 'attachment; filename="../evil/named.txt"')] if self.path.startswith("/cd") else []
+            return self._send(
+                206, BODY[start:], [("Content-Range", "bytes %d-%d/%d" % (start, len(BODY) - 1, len(BODY)))]
+            )
+        extra = (
+            [("Content-Disposition", 'attachment; filename="../evil/named.txt"')] if self.path.startswith("/cd") else []
+        )
         return self._send(200, BODY, extra)
 
     def _send(self, code, body, extra=()):
@@ -150,7 +155,12 @@ def test_max_filesize_and_remove_on_error(files, tmp_path, monkeypatch, capsysbi
     assert rc == 63 and not (tmp_path / "o").exists() and b"(63) Maximum file size exceeded" in out.err
     rc, _ = _run(monkeypatch, capsysbinary, tmp_path, ["-sS", "--max-filesize", "1k", "-o", "o", files + "/f"])
     assert rc == 0
-    rc, _ = _run(monkeypatch, capsysbinary, tmp_path, ["-s", "--fail-with-body", "--remove-on-error", "-o", "gone", files + "/404"])
+    rc, _ = _run(
+        monkeypatch,
+        capsysbinary,
+        tmp_path,
+        ["-s", "--fail-with-body", "--remove-on-error", "-o", "gone", files + "/404"],
+    )
     assert rc == 22 and not (tmp_path / "gone").exists()
 
 
@@ -192,7 +202,9 @@ def test_netrc_failures(files, tmp_path, monkeypatch, capsysbinary):
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     rc, out = _run(monkeypatch, capsysbinary, tmp_path, ["-sS", "-n", files + "/echo"])
     assert rc == 26 and b".netrc error: no such file" in out.err
-    rc, out = _run(monkeypatch, capsysbinary, tmp_path, ["-sS", "--netrc-file", str(tmp_path / "nope"), files + "/echo"])
+    rc, out = _run(
+        monkeypatch, capsysbinary, tmp_path, ["-sS", "--netrc-file", str(tmp_path / "nope"), files + "/echo"]
+    )
     assert rc == 2
     rc, out = _run(monkeypatch, capsysbinary, tmp_path, ["-s", "--netrc-optional", files + "/echo"])
     assert rc == 0 and _echo_user(out) == "-"
@@ -211,13 +223,23 @@ def test_digest(files, tmp_path, monkeypatch, capsysbinary):
 
 def test_resolve_and_connect_to_keep_the_host(files, tmp_path, monkeypatch, capsysbinary):
     port = files.rsplit(":", 1)[1]
-    rc, out = _run(monkeypatch, capsysbinary, tmp_path, ["-s", "--resolve", "fake.example:%s:127.0.0.1" % port,
-                                                         "http://fake.example:%s/echo" % port])
+    rc, out = _run(
+        monkeypatch,
+        capsysbinary,
+        tmp_path,
+        ["-s", "--resolve", "fake.example:%s:127.0.0.1" % port, "http://fake.example:%s/echo" % port],
+    )
     assert rc == 0 and out.out.split()[1] == ("fake.example:%s" % port).encode()
-    rc, out = _run(monkeypatch, capsysbinary, tmp_path, ["-s", "--connect-to", "fake.example:80:127.0.0.1:%s" % port,
-                                                         "http://fake.example/echo"])
+    rc, out = _run(
+        monkeypatch,
+        capsysbinary,
+        tmp_path,
+        ["-s", "--connect-to", "fake.example:80:127.0.0.1:%s" % port, "http://fake.example/echo"],
+    )
     assert rc == 0 and out.out.split()[1] == b"fake.example"
-    rc, out = _run(monkeypatch, capsysbinary, tmp_path, ["-s", "--connect-to", "::127.0.0.1:%s" % port, "http://any.example/echo"])
+    rc, out = _run(
+        monkeypatch, capsysbinary, tmp_path, ["-s", "--connect-to", "::127.0.0.1:%s" % port, "http://any.example/echo"]
+    )
     assert rc == 0 and out.out.split()[1] == b"any.example"
     assert socket.getaddrinfo.__module__ == "socket", "restored after the transfer"
 
@@ -226,7 +248,9 @@ def test_address_family(files, tmp_path, monkeypatch, capsysbinary):
     port = files.rsplit(":", 1)[1]
     rc, _ = _run(monkeypatch, capsysbinary, tmp_path, ["-s", "-4", "http://localhost:%s/echo" % port])
     assert rc == 0
-    rc, _ = _run(monkeypatch, capsysbinary, tmp_path, ["-s", "-6", "--connect-timeout", "3", "http://localhost:%s/echo" % port])
+    rc, _ = _run(
+        monkeypatch, capsysbinary, tmp_path, ["-s", "-6", "--connect-timeout", "3", "http://localhost:%s/echo" % port]
+    )
     assert rc in (6, 7), "the server listens on IPv4 only"
 
 
@@ -275,7 +299,9 @@ def test_tls_versions_and_ciphers(pki, tls_origin, tmp_path, monkeypatch, capsys
     assert rc == 0
     rc, _ = _run(monkeypatch, capsysbinary, tmp_path, ["-s", *ca, "--tlsv1.3", tls_origin + "/x"])
     assert rc == 0
-    rc, out = _run(monkeypatch, capsysbinary, tmp_path, ["-sS", *ca, "--tlsv1.3", "--tls-max", "1.2", tls_origin + "/x"])
+    rc, out = _run(
+        monkeypatch, capsysbinary, tmp_path, ["-sS", *ca, "--tlsv1.3", "--tls-max", "1.2", tls_origin + "/x"]
+    )
     assert rc == 35, "no version both ends accept: a failed handshake, not a certificate problem"
     rc, out = _run(monkeypatch, capsysbinary, tmp_path, ["-sS", *ca, "--ciphers", "NOT-A-CIPHER", tls_origin + "/x"])
     assert rc == 59 and b"(59) failed setting cipher list" in out.err
@@ -293,8 +319,18 @@ def test_aliases_and_no_ops(files, tmp_path, monkeypatch, capsysbinary):
     assert rc == 0 and _Files.seen[-1][3] == b"a=1"
     rc, out = _run(monkeypatch, capsysbinary, tmp_path, ["-s", "--show-headers", files + "/echo"])
     assert rc == 0 and b"ETag: " in out.out
-    for flag in ("--ssl-no-revoke", "--ssl-revoke-best-effort", "--ca-native", "--proxy-ca-native", "--no-keepalive",
-                 "--tcp-nodelay", "--no-alpn", "--no-npn", "--no-sessionid", "--styled-output"):
+    for flag in (
+        "--ssl-no-revoke",
+        "--ssl-revoke-best-effort",
+        "--ca-native",
+        "--proxy-ca-native",
+        "--no-keepalive",
+        "--tcp-nodelay",
+        "--no-alpn",
+        "--no-npn",
+        "--no-sessionid",
+        "--styled-output",
+    ):
         rc, _ = _run(monkeypatch, capsysbinary, tmp_path, ["-s", flag, files + "/echo"])
         assert rc == 0, flag
     rc, _ = _run(monkeypatch, capsysbinary, tmp_path, ["-s", "--keepalive-time", "30", files + "/echo"])
@@ -306,8 +342,10 @@ def test_stderr_goes_to_a_file(tmp_path, monkeypatch, capsysbinary):
     assert rc == 7 and out.err == b"" and "curl: (7)" in (tmp_path / "err.txt").read_text(encoding="utf-8")
 
 
-@pytest.mark.parametrize("short, long", [("-K", "--config"), ("-Z", "--parallel"), ("-a", "--append"),
-                                         ("-B", "--use-ascii"), ("-Q", "--quote")])
+@pytest.mark.parametrize(
+    "short, long",
+    [("-K", "--config"), ("-Z", "--parallel"), ("-a", "--append"), ("-B", "--use-ascii"), ("-Q", "--quote")],
+)
 def test_short_aliases_of_refused_flags_are_refused_in_one_line(short, long, tmp_path, monkeypatch, capsysbinary):
     argv = [short, "x"] if short in ("-K", "-Q") else [short]
     rc, out = _run(monkeypatch, capsysbinary, tmp_path, ["-s", *argv, "http://127.0.0.1:1/"])

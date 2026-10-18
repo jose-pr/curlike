@@ -16,6 +16,7 @@ Checked against curl 8.21:
 * The proxy credential is never involved: it is an unredirected header the
   proxy handler adds per hop.
 """
+
 import urllib.parse
 import urllib.request
 
@@ -87,5 +88,11 @@ class CurlRedirectHandler(urllib.request.HTTPRedirectHandler):
             jar_cookie = self.args.cookie_header(caller_url(newurl, self.plan))
             if jar_cookie:
                 new_headers['Cookie'] = jar_cookie
-        return urllib.request.Request(newurl, data=data, headers=new_headers, origin_req_host=req.origin_req_host,
-                                      unverifiable=True, method=new_method)
+        return urllib.request.Request(
+            newurl,
+            data=data,
+            headers=new_headers,
+            origin_req_host=req.origin_req_host,
+            unverifiable=True,
+            method=new_method,
+        )

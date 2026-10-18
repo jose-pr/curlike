@@ -1,5 +1,6 @@
 """Body options: ``-d`` and its variants, ``--json``, ``--data-urlencode``,
 multipart ``-F`` / ``--form-string``, and ``-T`` uploads."""
+
 import argparse
 import binascii
 import os
@@ -18,9 +19,17 @@ JSON_CONTENT_TYPE = 'application/json'
 _FORM_PARAM = re.compile(r';\s*(type|filename|headers|encoder)=', re.IGNORECASE)
 #: curl's content types for an uploaded file, by extension; else octet-stream.
 _FORM_TYPES = {
-    '.gif': 'image/gif', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
-    '.svg': 'image/svg+xml', '.txt': 'text/plain', '.htm': 'text/html', '.html': 'text/html',
-    '.pdf': 'application/pdf', '.xml': 'application/xml', '.json': 'application/json',
+    '.gif': 'image/gif',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.svg': 'image/svg+xml',
+    '.txt': 'text/plain',
+    '.htm': 'text/html',
+    '.html': 'text/html',
+    '.pdf': 'application/pdf',
+    '.xml': 'application/xml',
+    '.json': 'application/json',
 }
 
 
@@ -95,8 +104,10 @@ class BodyArgs(Group):
 
     def _check(self):
         if self.form_parts and self.body_parts:
-            raise ValueError('You can only select one HTTP request method! '
-                             'You asked for both POST (-d) and multipart formpost (-F).')
+            raise ValueError(
+                'You can only select one HTTP request method! '
+                'You asked for both POST (-d) and multipart formpost (-F).'
+            )
 
     def body_headers(self):
         """The headers the body implies: ``--json``'s Content-Type and Accept."""
@@ -157,7 +168,7 @@ class BodyArgs(Group):
         params = {}
         cut = _FORM_PARAM.search(value)
         if cut:
-            value, tail = value[:cut.start()], value[cut.start():]
+            value, tail = value[: cut.start()], value[cut.start() :]
             for key, raw in re.findall(r';\s*([A-Za-z]+)=("[^"]*"|[^;]*)', tail):
                 quoted = len(raw) > 1 and raw[0] == raw[-1] == '"'
                 params[key.lower()] = raw[1:-1] if quoted else raw.strip()

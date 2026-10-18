@@ -51,6 +51,7 @@ tags, not measured:
   8.17 on, and not at all before; wrapped to the terminal's width from 8.9
   on, to 79 columns before.
 """
+
 import os
 import re
 import shutil
@@ -67,6 +68,7 @@ COMPAT = 'CURL_COMPAT'
 def var(env=None):
     """The variable naming the compatibility version, for messages and tests."""
     return (env or HTTPEnv()).name(COMPAT) or COMPAT
+
 
 #: The newest curl measured: what the fallback answers as with no curl to ask.
 NEWEST = (8, 22, 0)
@@ -115,8 +117,9 @@ def describe(path):
     Schannel -- which checks certificate revocation, unlike OpenSSL."""
     if path not in _described:
         try:
-            out = getattr(subprocess.run([path, '-V'], capture_output=True, timeout=10, stdin=subprocess.DEVNULL),
-                          'stdout', b'')
+            out = getattr(
+                subprocess.run([path, '-V'], capture_output=True, timeout=10, stdin=subprocess.DEVNULL), 'stdout', b''
+            )
         except (OSError, subprocess.SubprocessError):
             out = b''
         text = (out or b'').decode('ascii', 'replace')
@@ -167,8 +170,12 @@ def socks_unresolved(host, proxy_host):
 
 
 #: The curl release that added a -w variable, where it is newer than 8.17.
-WRITE_OUT_SINCE = {'size_delivered': (8, 20, 0), 'time_posttransfer': (8, 10, 0), 'proxy_used': (8, 7, 0),
-                   'num_retries': (8, 9, 0)}
+WRITE_OUT_SINCE = {
+    'size_delivered': (8, 20, 0),
+    'time_posttransfer': (8, 10, 0),
+    'proxy_used': (8, 7, 0),
+    'num_retries': (8, 9, 0),
+}
 
 
 def knows_write_out(name):

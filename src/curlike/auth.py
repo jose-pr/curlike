@@ -8,6 +8,7 @@ with ``-n`` and ``--netrc-optional`` alike. ``-n`` without a netrc file is
 exit 26; ``--netrc-file`` naming none is a usage error (exit 2). The netrc
 is read by a small parser of our own: Python's ``netrc`` module refuses a
 file with open permissions on POSIX, which curl does not."""
+
 import base64
 import os
 import urllib.parse
@@ -136,7 +137,9 @@ class AuthArgs(Group):
                 if compat.ignores_missing_netrc_file():
                     return None  # before curl 8.12: no credentials, no error
                 if compat.checks_files_first():
-                    raise EarlyExit(EXIT_USAGE, "The file '%s' provided to --netrc-file does not exist" % self.netrc_file)
+                    raise EarlyExit(
+                        EXIT_USAGE, "The file '%s' provided to --netrc-file does not exist" % self.netrc_file
+                    )
                 raise LocalError(EXIT_READ, '.netrc error: no such file')
             path = self.netrc_file
         elif self.netrc or self.netrc_optional:

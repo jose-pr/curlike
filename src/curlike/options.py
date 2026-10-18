@@ -1,6 +1,7 @@
 """``CurlCmd``: every option group composed into one duho command. Adding a
 group is adding a base here; a flag lives in the group whose behaviour it
 drives."""
+
 from ._duho import duho
 from .args import Group
 from .auth import AuthArgs
@@ -23,8 +24,20 @@ class ShimArgs(Group):
     ("-V", "--version")
 
 
-class CurlCmd(UnsupportedArgs, CookieArgs, ConnectionArgs, TLSArgs, WriteOutArgs, DownloadArgs, OutputArgs, BodyArgs,
-              AuthArgs, RequestArgs, ShimArgs, duho.Cmd):
+class CurlCmd(
+    UnsupportedArgs,
+    CookieArgs,
+    ConnectionArgs,
+    TLSArgs,
+    WriteOutArgs,
+    DownloadArgs,
+    OutputArgs,
+    BodyArgs,
+    AuthArgs,
+    RequestArgs,
+    ShimArgs,
+    duho.Cmd,
+):
     """Pure Python curl-like tool: curlike's fallback for a missing curl.
 
     duho lists the fields from the last-listed group up, so the help reads

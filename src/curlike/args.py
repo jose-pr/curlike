@@ -10,6 +10,7 @@ Rules for a group: a field must not share a name with any method or class
 attribute, a group reaches another group's options only through ``self``, and
 ``_check`` (optional) validates the group's own options after parsing.
 """
+
 import sys
 import urllib.parse
 
@@ -69,7 +70,7 @@ def url_encoded(spec, reader, raw_plus=False):
     if not cuts:
         return urllib.parse.quote(spec, safe='')
     cut = min(cuts)
-    name, rest = spec[:cut], spec[cut + 1:]
+    name, rest = spec[:cut], spec[cut + 1 :]
     content = reader(rest) if spec[cut] == '@' else rest.encode('utf-8')
     encoded = urllib.parse.quote(content, safe='')
     return '%s=%s' % (name, encoded) if name else encoded

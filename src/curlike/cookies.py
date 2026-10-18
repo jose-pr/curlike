@@ -2,6 +2,7 @@
 and ``-c`` (the response's cookies written back as a jar) -- on
 ``httplib.cookies``, the same reading, matching and writing the session
 toolkit uses."""
+
 import os
 import urllib.parse
 from pathlib import Path
@@ -46,8 +47,9 @@ class CookieArgs(Group):
         if os.path.exists(self.cookie):
             # curl's order: longest path, domain, name first; the newest (later in the file) first.
             jar = list(enumerate(self._jar()))
-            jar.sort(key=lambda item: (-len(item[1].path or ''), -len(item[1].domain or ''), -len(item[1].name),
-                                       -item[0]))
+            jar.sort(
+                key=lambda item: (-len(item[1].path or ''), -len(item[1].domain or ''), -len(item[1].name), -item[0])
+            )
             pairs = ['%s=%s' % (c.name, c.value) for _, c in jar if cookie_applies(c, url)]
             return '; '.join(pairs) if pairs else None
         return self.cookie

@@ -1,5 +1,6 @@
 """Reading argv the way curl reads it, without parsing it: what the
 passthrough and the URL hooks need to know before any path is chosen."""
+
 import argparse
 
 from .options import build_parser
@@ -7,7 +8,8 @@ from .request import default_scheme
 
 _STEERING = {
     'proxy': ('-x', '--proxy', '--socks4', '--socks4a', '--socks5', '--socks5-hostname'),
-    'noproxy': ('--noproxy',), 'proxy_user': ('-U', '--proxy-user'),
+    'noproxy': ('--noproxy',),
+    'proxy_user': ('-U', '--proxy-user'),
     'url': ('--url',),
 }
 
@@ -18,7 +20,8 @@ def _takes_value():
     for action in build_parser()._actions:
         for opt in action.option_strings:
             table[opt] = action.nargs != 0 and not isinstance(
-                action, (argparse._StoreTrueAction, argparse._StoreFalseAction, argparse._CountAction))
+                action, (argparse._StoreTrueAction, argparse._StoreFalseAction, argparse._CountAction)
+            )
     return table
 
 
@@ -33,7 +36,7 @@ def attach_values(argv):
         arg = args[i]
         i += 1
         if arg == '--':
-            out.extend(args[i - 1:])
+            out.extend(args[i - 1 :])
             break
         nxt = args[i] if i < len(args) else None
         dashed = nxt is not None and nxt.startswith('-') and nxt != '-'
@@ -74,7 +77,8 @@ def walk_argv(argv):
     for action in build_parser()._actions:
         for opt in action.option_strings:
             takes_value[opt] = action.nargs != 0 and not isinstance(
-                action, (argparse._StoreTrueAction, argparse._StoreFalseAction, argparse._CountAction))
+                action, (argparse._StoreTrueAction, argparse._StoreFalseAction, argparse._CountAction)
+            )
             for key, names in _STEERING.items():
                 if opt in names:
                     wanted[opt] = key

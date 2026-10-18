@@ -7,6 +7,7 @@ default scheme -- and the mixin composition itself.
 The TLS tests build a throwaway CA, server and client certificates with the
 `openssl` binary (Git for Windows ships one) and skip where there is none.
 """
+
 import base64
 import email
 import email.policy
@@ -27,7 +28,6 @@ from curlike.args import Group
 from curlike.options import CurlCmd, build_parser
 from curlike.tls import split_cert
 from test_proxy_auth import _clean_env, _fallback  # noqa: F401  (autouse fixture reused)
-
 
 # --------------------------------------------------------------------------- #
 # origins
@@ -58,12 +58,15 @@ class _Echo(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b"missing")
             return
-        payload = json.dumps({
-            "method": self.command, "path": self.path,
-            "headers": {k.lower(): v for k, v in self.headers.items()},
-            "body": base64.b64encode(body).decode("ascii"),
-            "client": getattr(self, "client_cn", None),
-        }).encode()
+        payload = json.dumps(
+            {
+                "method": self.command,
+                "path": self.path,
+                "headers": {k.lower(): v for k, v in self.headers.items()},
+                "body": base64.b64encode(body).decode("ascii"),
+                "client": getattr(self, "client_cn", None),
+            }
+        ).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
@@ -123,12 +126,18 @@ def test_no_field_is_shadowed_by_a_method():
 
 def test_the_groups_compose_in_order():
     """The refused flags are checked first; the help reads request, body, output..."""
-    groups = [k.__name__ for k in CurlCmd.__mro__ if isinstance(k, type) and issubclass(k, Group) and k not in (Group, CurlCmd)]
+    groups = [
+        k.__name__
+        for k in CurlCmd.__mro__
+        if isinstance(k, type) and issubclass(k, Group) and k not in (Group, CurlCmd)
+    ]
     assert groups[0] == "UnsupportedArgs" and groups[-4:] == ["BodyArgs", "AuthArgs", "RequestArgs", "ShimArgs"]
     lines = [ln.strip() for ln in build_parser().format_help().splitlines()]
     # "-X METHOD, --request METHOD" before 3.13, "-X, --request METHOD" after.
-    where = [next(i for i, ln in enumerate(lines) if ln.startswith(flag + " ") or ln.startswith(flag + ","))
-             for flag in ("-X", "-d", "-o", "-b")]
+    where = [
+        next(i for i, ln in enumerate(lines) if ln.startswith(flag + " ") or ln.startswith(flag + ","))
+        for flag in ("-X", "-d", "-o", "-b")
+    ]
     assert where == sorted(where)
 
 
@@ -161,20 +170,39 @@ def test_json_sets_both_headers_and_concatenates(echo, tmp_path, monkeypatch, ca
 def test_data_urlencode_forms_in_command_line_order(echo, tmp_path, monkeypatch, capsysbinary):
     f = tmp_path / "v.txt"
     f.write_bytes(b"x y&z")
-    rc, out = _fallback(monkeypatch, capsysbinary, [
-        "-s", "--data-urlencode", "a b", "-d", "raw=1", "--data-urlencode", "=c d",
-        "--data-urlencode", "n=e=f", "--data-urlencode", "file@" + str(f), echo])
+    rc, out = _fallback(
+        monkeypatch,
+        capsysbinary,
+        [
+            "-s",
+            "--data-urlencode",
+            "a b",
+            "-d",
+            "raw=1",
+            "--data-urlencode",
+            "=c d",
+            "--data-urlencode",
+            "n=e=f",
+            "--data-urlencode",
+            "file@" + str(f),
+            echo,
+        ],
+    )
     assert rc == 0 and _seen(out)["body"] == b"a%20b&raw=1&c%20d&n=e%3Df&file=x%20y%26z"
 
 
 def test_get_moves_the_data_into_the_query(echo, monkeypatch, capsysbinary):
-    rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "-G", "-d", "q=1", "--data-urlencode", "s=a b", echo + "/find"])
+    rc, out = _fallback(
+        monkeypatch, capsysbinary, ["-s", "-G", "-d", "q=1", "--data-urlencode", "s=a b", echo + "/find"]
+    )
     seen = _seen(out)
     assert rc == 0 and seen["method"] == "GET" and seen["path"] == "/find?q=1&s=a%20b" and seen["body"] == b""
 
 
 def test_url_query_encodes_or_keeps(echo, monkeypatch, capsysbinary):
-    rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "--url-query", "a=b c", "--url-query", "+raw=%41", echo + "/q?x=1"])
+    rc, out = _fallback(
+        monkeypatch, capsysbinary, ["-s", "--url-query", "a=b c", "--url-query", "+raw=%41", echo + "/q?x=1"]
+    )
     assert rc == 0 and _seen(out)["path"] == "/q?x=1&a=b%20c&raw=%41"
 
 
@@ -191,14 +219,31 @@ def test_form_builds_multipart(echo, tmp_path, monkeypatch, capsysbinary):
     upload.write_bytes(b"\x89PNG-bytes")
     note = tmp_path / "note.txt"
     note.write_bytes(b"from a file")
-    rc, out = _fallback(monkeypatch, capsysbinary, [
-        "-s", "-F", "field=value", "-F", "file=@%s" % upload, "-F", "text=<%s" % note,
-        "-F", "doc=@%s;type=text/markdown;filename=renamed.md" % note, "--form-string", "lit=@not-a-file", echo])
+    rc, out = _fallback(
+        monkeypatch,
+        capsysbinary,
+        [
+            "-s",
+            "-F",
+            "field=value",
+            "-F",
+            "file=@%s" % upload,
+            "-F",
+            "text=<%s" % note,
+            "-F",
+            "doc=@%s;type=text/markdown;filename=renamed.md" % note,
+            "--form-string",
+            "lit=@not-a-file",
+            echo,
+        ],
+    )
     seen = _seen(out)
     assert rc == 0 and seen["method"] == "POST"
     ctype = seen["headers"]["content-type"]
     assert ctype.startswith("multipart/form-data; boundary=")
-    message = email.message_from_bytes(("Content-Type: %s\r\n\r\n" % ctype).encode() + seen["body"], policy=email.policy.HTTP)
+    message = email.message_from_bytes(
+        ("Content-Type: %s\r\n\r\n" % ctype).encode() + seen["body"], policy=email.policy.HTTP
+    )
     parts = {p.get_param("name", header="content-disposition"): p for p in message.iter_parts()}
     assert parts["field"].get_payload(decode=True) == b"value" and parts["field"].get_filename() is None
     assert parts["file"].get_filename() == "photo.png" and parts["file"].get_content_type() == "image/png"
@@ -234,9 +279,20 @@ def test_remote_name_output_dir_and_create_dirs(echo, tmp_path, monkeypatch, cap
     monkeypatch.chdir(tmp_path)
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "-O", echo + "/files/report.json"])
     assert rc == 0 and (tmp_path / "report.json").is_file()
-    rc, out = _fallback(monkeypatch, capsysbinary, [
-        "-s", "--create-dirs", "--output-dir", str(tmp_path / "a" / "b"), "-O", "-w", "%{filename_effective}",
-        echo + "/x.json"])
+    rc, out = _fallback(
+        monkeypatch,
+        capsysbinary,
+        [
+            "-s",
+            "--create-dirs",
+            "--output-dir",
+            str(tmp_path / "a" / "b"),
+            "-O",
+            "-w",
+            "%{filename_effective}",
+            echo + "/x.json",
+        ],
+    )
     assert rc == 0 and (tmp_path / "a" / "b" / "x.json").is_file()
     assert out.out.decode() == os.path.join(str(tmp_path / "a" / "b"), "x.json")
     rc, out = _fallback(monkeypatch, capsysbinary, ["-sS", "-O", echo + "/"])
@@ -251,14 +307,24 @@ def test_fail_with_body_keeps_the_body(echo, monkeypatch, capsysbinary):
 
 
 def test_no_ops_are_accepted(echo, monkeypatch, capsysbinary):
-    for flag in ("-g", "--globoff", "--http1.1", "-N", "--no-buffer", "-#", "--progress-bar",
-                 "--no-progress-meter", "-q", "--disable"):
+    for flag in (
+        "-g",
+        "--globoff",
+        "--http1.1",
+        "-N",
+        "--no-buffer",
+        "-#",
+        "--progress-bar",
+        "--no-progress-meter",
+        "-q",
+        "--disable",
+    ):
         rc, out = _fallback(monkeypatch, capsysbinary, [flag, "-s", echo + "/x"])
         assert rc == 0 and _seen(out)["path"] == "/x", flag
 
 
 def test_scheme_defaults_to_http_and_others_are_refused(echo, monkeypatch, capsysbinary):
-    rc, out = _fallback(monkeypatch, capsysbinary, ["-s", echo[len("http://"):] + "/bare"])
+    rc, out = _fallback(monkeypatch, capsysbinary, ["-s", echo[len("http://") :] + "/bare"])
     assert rc == 0 and _seen(out)["path"] == "/bare"
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "ftp://example.com/f"])
     assert rc == 2 and out.err.strip() == b"curl: (2) Unsupported protocol: ftp"
@@ -286,7 +352,9 @@ def test_retry_a_transient_status_with_backoff(echo, naps, monkeypatch, capsysbi
 
 def test_retry_gives_up_with_the_last_answer(echo, naps, monkeypatch, capsysbinary):
     _Echo.flaky = 5
-    rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "--retry", "1", "--retry-delay", "3", "-w", "%{http_code}", echo + "/flaky"])
+    rc, out = _fallback(
+        monkeypatch, capsysbinary, ["-s", "--retry", "1", "--retry-delay", "3", "-w", "%{http_code}", echo + "/flaky"]
+    )
     assert rc == 0 and out.out == b"busy503" and naps == [3.0]
 
 
@@ -343,22 +411,72 @@ def pki(tmp_path_factory):
     def run(*argv):
         subprocess.run([openssl, *argv], cwd=str(d), check=True, capture_output=True)
 
-    run("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", "ca.key", "-out", "ca.pem", "-days", "3650",
-        "-subj", "/CN=net-test-ca", "-addext", "basicConstraints=critical,CA:TRUE",
-        "-addext", "keyUsage=critical,keyCertSign,cRLSign", "-addext", "subjectKeyIdentifier=hash")
-    for name, cn, extra in (("server", "127.0.0.1", "subjectAltName=IP:127.0.0.1\nextendedKeyUsage=serverAuth\n"),
-                            ("client", "net-test-client", "extendedKeyUsage=clientAuth\n")):
+    run(
+        "req",
+        "-x509",
+        "-newkey",
+        "rsa:2048",
+        "-nodes",
+        "-keyout",
+        "ca.key",
+        "-out",
+        "ca.pem",
+        "-days",
+        "3650",
+        "-subj",
+        "/CN=net-test-ca",
+        "-addext",
+        "basicConstraints=critical,CA:TRUE",
+        "-addext",
+        "keyUsage=critical,keyCertSign,cRLSign",
+        "-addext",
+        "subjectKeyIdentifier=hash",
+    )
+    for name, cn, extra in (
+        ("server", "127.0.0.1", "subjectAltName=IP:127.0.0.1\nextendedKeyUsage=serverAuth\n"),
+        ("client", "net-test-client", "extendedKeyUsage=clientAuth\n"),
+    ):
         (d / (name + ".ext")).write_text(
             "basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\n"
-            "authorityKeyIdentifier=keyid\nsubjectKeyIdentifier=hash\n" + extra, encoding="ascii")
-        run("req", "-newkey", "rsa:2048", "-nodes", "-keyout", name + ".key", "-out", name + ".csr", "-subj", "/CN=" + cn)
-        run("x509", "-req", "-in", name + ".csr", "-CA", "ca.pem", "-CAkey", "ca.key", "-set_serial", "2" if name == "server" else "3",
-            "-out", name + ".pem", "-days", "3650", "-extfile", name + ".ext")
+            "authorityKeyIdentifier=keyid\nsubjectKeyIdentifier=hash\n" + extra,
+            encoding="ascii",
+        )
+        run(
+            "req",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            name + ".key",
+            "-out",
+            name + ".csr",
+            "-subj",
+            "/CN=" + cn,
+        )
+        run(
+            "x509",
+            "-req",
+            "-in",
+            name + ".csr",
+            "-CA",
+            "ca.pem",
+            "-CAkey",
+            "ca.key",
+            "-set_serial",
+            "2" if name == "server" else "3",
+            "-out",
+            name + ".pem",
+            "-days",
+            "3650",
+            "-extfile",
+            name + ".ext",
+        )
     run("pkey", "-in", "client.key", "-aes256", "-passout", "pass:s3cret", "-out", "client-enc.key")
     (d / "client-combined.pem").write_bytes((d / "client.pem").read_bytes() + (d / "client.key").read_bytes())
     (d / "client-combined-enc.pem").write_bytes((d / "client.pem").read_bytes() + (d / "client-enc.key").read_bytes())
-    digest = subprocess.run([openssl, "x509", "-hash", "-noout", "-in", str(d / "ca.pem")],
-                            check=True, capture_output=True, text=True).stdout.strip()
+    digest = subprocess.run(
+        [openssl, "x509", "-hash", "-noout", "-in", str(d / "ca.pem")], check=True, capture_output=True, text=True
+    ).stdout.strip()
     (d / "capath").mkdir()
     shutil.copy(str(d / "ca.pem"), str(d / "capath" / (digest + ".0")))
     return d
@@ -396,13 +514,16 @@ def test_cacert_and_capath_verify_the_server(pki, tls_origin, monkeypatch, capsy
     assert rc == 0
 
 
-@pytest.mark.parametrize("flags", [
-    ["--cert", "{d}/client.pem", "--key", "{d}/client.key"],
-    ["-E", "{d}/client-combined.pem"],
-    ["--cert", "{d}/client.pem", "--key", "{d}/client-enc.key", "--pass", "s3cret"],
-    ["--cert", "{d}/client-combined-enc.pem:s3cret"],
-    ["--cert", "{d}/client-combined.pem", "--cert-type", "pem", "--key-type", "PEM"],
-])
+@pytest.mark.parametrize(
+    "flags",
+    [
+        ["--cert", "{d}/client.pem", "--key", "{d}/client.key"],
+        ["-E", "{d}/client-combined.pem"],
+        ["--cert", "{d}/client.pem", "--key", "{d}/client-enc.key", "--pass", "s3cret"],
+        ["--cert", "{d}/client-combined-enc.pem:s3cret"],
+        ["--cert", "{d}/client-combined.pem", "--cert-type", "pem", "--key-type", "PEM"],
+    ],
+)
 def test_client_certificate(flags, pki, tls_origin, monkeypatch, capsysbinary):
     argv = [f.format(d=pki) for f in flags]
     rc, out = _fallback(monkeypatch, capsysbinary, ["-sS", "--cacert", str(pki / "ca.pem"), *argv, tls_origin + "/x"])
@@ -412,23 +533,42 @@ def test_client_certificate(flags, pki, tls_origin, monkeypatch, capsysbinary):
 
 def test_unusable_tls_files_are_curls_codes(pki, tls_origin, echo, monkeypatch, capsysbinary, tmp_path):
     # A --cacert naming nothing is refused before anything else (curl 8.18+): 2, no -w.
-    rc, out = _fallback(monkeypatch, capsysbinary, ["-sS", "-w", "%{exitcode}", "--cacert", str(pki / "nope.pem"), tls_origin])
+    rc, out = _fallback(
+        monkeypatch, capsysbinary, ["-sS", "-w", "%{exitcode}", "--cacert", str(pki / "nope.pem"), tls_origin]
+    )
     assert rc == 2 and out.out == b""
     assert out.err.strip() == ("curl: The file '%s' provided to --cacert does not exist" % (pki / "nope.pem")).encode()
     # One that is not a CA bundle fails at the handshake: 77, -w written.
     (tmp_path / "garbage.pem").write_text("not a certificate\n")
-    rc, out = _fallback(monkeypatch, capsysbinary, ["-sS", "-w", "%{exitcode}", "--cacert", str(tmp_path / "garbage.pem"), tls_origin])
+    rc, out = _fallback(
+        monkeypatch, capsysbinary, ["-sS", "-w", "%{exitcode}", "--cacert", str(tmp_path / "garbage.pem"), tls_origin]
+    )
     assert rc == 77 and out.out == b"77" and out.err.startswith(b"curl: (77)")
     # ...and never fails a plain-http transfer, which has no handshake.
     rc, out = _fallback(monkeypatch, capsysbinary, ["-sS", "--cacert", str(tmp_path / "garbage.pem"), echo + "/plain"])
     assert rc == 0, out.err
     rc, out = _fallback(monkeypatch, capsysbinary, ["-sS", "--capath", str(pki / "nope"), tls_origin])
     assert rc == 77
-    rc, out = _fallback(monkeypatch, capsysbinary, ["-sS", "--cacert", str(pki / "ca.pem"), "--cert", str(pki / "nope.pem"), tls_origin])
+    rc, out = _fallback(
+        monkeypatch, capsysbinary, ["-sS", "--cacert", str(pki / "ca.pem"), "--cert", str(pki / "nope.pem"), tls_origin]
+    )
     assert rc == 58 and out.err.startswith(b"curl: (58)")
-    rc, out = _fallback(monkeypatch, capsysbinary, [
-        "-sS", "--cacert", str(pki / "ca.pem"), "--cert", str(pki / "client.pem"), "--key", str(pki / "client-enc.key"),
-        "--pass", "wrong", tls_origin])
+    rc, out = _fallback(
+        monkeypatch,
+        capsysbinary,
+        [
+            "-sS",
+            "--cacert",
+            str(pki / "ca.pem"),
+            "--cert",
+            str(pki / "client.pem"),
+            "--key",
+            str(pki / "client-enc.key"),
+            "--pass",
+            "wrong",
+            tls_origin,
+        ],
+    )
     assert rc == 58
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "--cert-type", "P12", "--cert", "x.p12", tls_origin])
     assert rc == 2 and out.err.strip() == b"curl: (2) Unsupported --cert-type: P12 (the fallback reads PEM only)"
@@ -449,12 +589,19 @@ def test_set_cookie_specs_and_cookie_applies():
     from httplib.cookies import CookieSpec, cookie_applies, set_cookie_specs
 
     now = 1_000_000_000.0
-    specs = dict((c.name, (c, gone)) for c, gone in set_cookie_specs([
-        "sid=abc; Path=/app; HttpOnly; Secure; Max-Age=60",
-        "old=x; Max-Age=0",
-        "gone=; Path=/",
-        "dom=1; Domain=.example.com",
-    ], "api.example.com", now=now))
+    specs = dict(
+        (c.name, (c, gone))
+        for c, gone in set_cookie_specs(
+            [
+                "sid=abc; Path=/app; HttpOnly; Secure; Max-Age=60",
+                "old=x; Max-Age=0",
+                "gone=; Path=/",
+                "dom=1; Domain=.example.com",
+            ],
+            "api.example.com",
+            now=now,
+        )
+    )
     sid, gone = specs["sid"]
     assert not gone and sid.http_only and sid.secure and sid.expires == int(now) + 60 and sid.path == "/app"
     assert specs["old"][1] and specs["gone"][1], "Max-Age=0 and an empty value expire the cookie"
@@ -463,17 +610,22 @@ def test_set_cookie_specs_and_cookie_applies():
     assert not cookie_applies(sid, "https://api.example.com/other", now=now), "path prefix"
     assert not cookie_applies(sid, "https://api.example.com/app", now=now + 61), "expired"
     assert cookie_applies(specs["dom"][0], "http://a.b.example.com/", now=now), "a leading dot covers subdomains"
-    flagged = CookieSpec(domain="example.com", path="/", secure=False, expires=None, name="f", value="1", subdomains=True)
+    flagged = CookieSpec(
+        domain="example.com", path="/", secure=False, expires=None, name="f", value="1", subdomains=True
+    )
     assert cookie_applies(flagged, "http://www.example.com/") and not cookie_applies(
-        CookieSpec("example.com", "/", False, None, "h", "1"), "http://www.example.com/")
+        CookieSpec("example.com", "/", False, None, "h", "1"), "http://www.example.com/"
+    )
 
 
 def test_netscape_round_trip_keeps_httponly_and_the_flag(tmp_path):
     from httplib.cookies import CookieSpec, load_netscape, save_netscape
 
     jar = tmp_path / "jar.txt"
-    rows = [CookieSpec("h.example", "/", True, 4102444800, "a", "1", http_only=True),
-            CookieSpec("example.com", "/", False, None, "b", "2", subdomains=True)]
+    rows = [
+        CookieSpec("h.example", "/", True, 4102444800, "a", "1", http_only=True),
+        CookieSpec("example.com", "/", False, None, "b", "2", subdomains=True),
+    ]
     save_netscape(rows, jar)
     text = jar.read_text(encoding="utf-8")
     assert "#HttpOnly_h.example\tFALSE\t/\tTRUE\t4102444800\ta\t1" in text

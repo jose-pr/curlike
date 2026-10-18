@@ -1,6 +1,7 @@
 """TLS options: how the server is verified (the OS trust store, ``--cacert``
 / ``--capath``, or not at all with ``-k``) and the client certificate
 (``--cert`` / ``--key`` / ``--pass``, PEM)."""
+
 import os
 import ssl
 from typing import Optional
@@ -24,13 +25,13 @@ def split_cert(value):
     name, i = [], 0
     while i < len(value):
         char = value[i]
-        if char == '\\' and value[i + 1:i + 2] == ':':
+        if char == '\\' and value[i + 1 : i + 2] == ':':
             name.append(':')
             i += 2
             continue
         drive = os.name == 'nt' and i == 1 and value[0].isalpha() and value[2:3] in ('\\', '/')
         if char == ':' and not drive:
-            return ''.join(name), value[i + 1:]
+            return ''.join(name), value[i + 1 :]
         name.append(char)
         i += 1
     return ''.join(name), None
@@ -45,8 +46,18 @@ def _pem_only(option, value):
 CA_BUNDLE_VAR = 'CURL_CA_BUNDLE'
 
 
-def build_ssl_context(insecure, cacert=None, capath=None, cert=None, key=None, passphrase=None,
-                      min_version=None, max_version=None, ciphers=None, crlfile=None):
+def build_ssl_context(
+    insecure,
+    cacert=None,
+    capath=None,
+    cert=None,
+    key=None,
+    passphrase=None,
+    min_version=None,
+    max_version=None,
+    ciphers=None,
+    crlfile=None,
+):
     """An SSL context. The server is verified against ``cacert`` / ``capath``
     when given, else ``$CURL_CA_BUNDLE`` (both replace the trust store, as in
     curl), else the OS trust store -- ``httplib.tls``, the store the requests
@@ -65,12 +76,17 @@ def build_ssl_context(insecure, cacert=None, capath=None, cert=None, key=None, p
         ctx.verify_mode = ssl.CERT_NONE
     elif cacert or capath:
         if capath and not os.path.isdir(capath):
-            raise LocalError(EXIT_CACERT, 'error setting certificate verify locations: CApath: %s (not a directory)' % capath)
+            raise LocalError(
+                EXIT_CACERT, 'error setting certificate verify locations: CApath: %s (not a directory)' % capath
+            )
         try:
             ctx = new_os_context(cafile=cacert, capath=capath)
         except (OSError, ssl.SSLError) as exc:
-            raise LocalError(EXIT_CACERT, 'error setting certificate verify locations: CAfile: %s CApath: %s (%s)' % (
-                cacert or 'none', capath or 'none', exc))
+            raise LocalError(
+                EXIT_CACERT,
+                'error setting certificate verify locations: CAfile: %s CApath: %s (%s)'
+                % (cacert or 'none', capath or 'none', exc),
+            )
     else:
         ctx = new_os_context()
     if crlfile and not insecure:
@@ -97,8 +113,10 @@ def build_ssl_context(insecure, cacert=None, capath=None, cert=None, key=None, p
         try:
             ctx.load_cert_chain(certfile, keyfile=key or None, password=password)
         except (OSError, ssl.SSLError) as exc:
-            raise LocalError(EXIT_CLIENT_CERT, 'could not load PEM client certificate %s%s (%s)' % (
-                certfile, ', key %s' % key if key else '', exc))
+            raise LocalError(
+                EXIT_CLIENT_CERT,
+                'could not load PEM client certificate %s%s (%s)' % (certfile, ', key %s' % key if key else '', exc),
+            )
     return ctx
 
 
@@ -293,8 +311,12 @@ class TLSArgs(Group):
     def tls_versions(self):
         """``(minimum, maximum)`` as ``ssl.TLSVersion`` (``None``: the default)."""
         floor = None
-        for flag, name in ((self.tlsv1_3, 'TLSv1_3'), (self.tlsv1_2, 'TLSv1_2'), (self.tlsv1_1, 'TLSv1_1'),
-                           (self.tlsv1_0 or self.tlsv1, 'TLSv1')):
+        for flag, name in (
+            (self.tlsv1_3, 'TLSv1_3'),
+            (self.tlsv1_2, 'TLSv1_2'),
+            (self.tlsv1_1, 'TLSv1_1'),
+            (self.tlsv1_0 or self.tlsv1, 'TLSv1'),
+        ):
             if flag:
                 floor = getattr(ssl.TLSVersion, name)
                 break
@@ -305,8 +327,13 @@ class TLSArgs(Group):
         """curl's parse-time check: a ``--cacert`` / ``--crlfile`` / ``--netrc-file`` naming
         no file is exit 2 before anything else -- from curl 8.18 on
         (``compat``); before, each fails where it is used."""
-        named = (('--cacert', self.cacert), ('--crlfile', self.crlfile), ('--proxy-cacert', self.proxy_cacert),
-                 ('--proxy-crlfile', self.proxy_crlfile), ('--netrc-file', getattr(self, 'netrc_file', None)))
+        named = (
+            ('--cacert', self.cacert),
+            ('--crlfile', self.crlfile),
+            ('--proxy-cacert', self.proxy_cacert),
+            ('--proxy-crlfile', self.proxy_crlfile),
+            ('--netrc-file', getattr(self, 'netrc_file', None)),
+        )
         missing = [path for _, path in named if path and not os.path.exists(path)]
         if not missing or not compat.checks_files_first():
             return
@@ -318,10 +345,17 @@ class TLSArgs(Group):
         """:class:`ProxyTLS` for an https:// proxy; a file that cannot be used
         fails at the proxy's handshake, as the origin's do at its own."""
         try:
-            context = build_ssl_context(self.proxy_insecure, cacert=self.proxy_cacert, capath=self.proxy_capath,
-                                        cert=self.proxy_cert, key=self.proxy_key, passphrase=self.proxy_pass,
-                                        min_version=ssl.TLSVersion.TLSv1 if self.proxy_tlsv1 else None,
-                                        ciphers=self.proxy_ciphers, crlfile=self.proxy_crlfile)
+            context = build_ssl_context(
+                self.proxy_insecure,
+                cacert=self.proxy_cacert,
+                capath=self.proxy_capath,
+                cert=self.proxy_cert,
+                key=self.proxy_key,
+                passphrase=self.proxy_pass,
+                min_version=ssl.TLSVersion.TLSv1 if self.proxy_tlsv1 else None,
+                ciphers=self.proxy_ciphers,
+                crlfile=self.proxy_crlfile,
+            )
         except LocalError as exc:
             context = UnusableContext(exc)
         from .connector import parse_pins
@@ -333,7 +367,15 @@ class TLSArgs(Group):
 
     def ssl_context(self):
         floor, top = self.tls_versions()
-        return build_ssl_context(self.insecure, cacert=self.cacert, capath=self.capath,
-                                 cert=self.cert, key=self.key, passphrase=self.pass_,
-                                 min_version=floor, max_version=top, ciphers=self.ciphers,
-                                 crlfile=self.crlfile)
+        return build_ssl_context(
+            self.insecure,
+            cacert=self.cacert,
+            capath=self.capath,
+            cert=self.cert,
+            key=self.key,
+            passphrase=self.pass_,
+            min_version=floor,
+            max_version=top,
+            ciphers=self.ciphers,
+            crlfile=self.crlfile,
+        )

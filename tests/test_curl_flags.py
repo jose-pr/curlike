@@ -1,6 +1,7 @@
 """What the parity tests cannot see: --limit-rate actually paces both
 directions, --local-port moves on to the next port of its range, and a pin
 that fails stops the request before anything is sent."""
+
 import socket
 import threading
 import time
@@ -71,8 +72,20 @@ def test_local_port_skips_a_port_in_use(server, monkeypatch, capsysbinary, tmp_p
     payload.write_bytes(b"x")
     try:
         # The same address as the busy socket: Windows lets a wildcard bind share its port.
-        rc, _ = _fallback(monkeypatch, capsysbinary, ["-sS", "--interface", "127.0.0.1", "--local-port",
-                                                       "%d-%d" % (low, low + 20), "-T", str(payload), server + "/up"])
+        rc, _ = _fallback(
+            monkeypatch,
+            capsysbinary,
+            [
+                "-sS",
+                "--interface",
+                "127.0.0.1",
+                "--local-port",
+                "%d-%d" % (low, low + 20),
+                "-T",
+                str(payload),
+                server + "/up",
+            ],
+        )
     finally:
         busy.close()
     assert rc == 0
@@ -84,8 +97,9 @@ def test_local_port_with_no_free_port_is_45(server, monkeypatch, capsysbinary):
     busy.bind(("127.0.0.1", 0))
     port = busy.getsockname()[1]
     try:
-        rc, out = _fallback(monkeypatch, capsysbinary, ["-sS", "--interface", "127.0.0.1", "--local-port", str(port),
-                                                         server + "/"])
+        rc, out = _fallback(
+            monkeypatch, capsysbinary, ["-sS", "--interface", "127.0.0.1", "--local-port", str(port), server + "/"]
+        )
     finally:
         busy.close()
     assert rc == 45 and out.err.startswith(b"curl: (45)")

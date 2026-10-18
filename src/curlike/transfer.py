@@ -1,6 +1,7 @@
 """The pure-stdlib (urllib) fallback: assemble the request from the parsed
 options, run it -- again, under ``--retry`` -- and answer as curl does:
 the same output, the same one-line errors, the same exit codes."""
+
 import gzip
 import http.client
 import re
@@ -19,10 +20,28 @@ from . import compat
 from .body import FORM_CONTENT_TYPE
 from .download import EXIT_FILESIZE
 from .connection import MAX_RETRY_SLEEP
-from .errors import (EXIT_CONNECT, EXIT_EMPTY_REPLY, EXIT_HTTP, EXIT_PARTIAL, EXIT_PROTOCOL, EXIT_RECV,
-                     EXIT_REDIRECTS, EXIT_RESOLVE, EXIT_RESOLVE_PROXY, EXIT_SEND, EXIT_SSL, EXIT_SSL_CONNECT,
-                     EXIT_TIMEOUT, EXIT_WEIRD_REPLY, EXIT_WRITE, EXIT_BAD_ENCODING, EXIT_TOO_LARGE,
-                     LocalError, Retry, WriteFailure)
+from .errors import (
+    EXIT_CONNECT,
+    EXIT_EMPTY_REPLY,
+    EXIT_HTTP,
+    EXIT_PARTIAL,
+    EXIT_PROTOCOL,
+    EXIT_RECV,
+    EXIT_REDIRECTS,
+    EXIT_RESOLVE,
+    EXIT_RESOLVE_PROXY,
+    EXIT_SEND,
+    EXIT_SSL,
+    EXIT_SSL_CONNECT,
+    EXIT_TIMEOUT,
+    EXIT_WEIRD_REPLY,
+    EXIT_WRITE,
+    EXIT_BAD_ENCODING,
+    EXIT_TOO_LARGE,
+    LocalError,
+    Retry,
+    WriteFailure,
+)
 from .output import notice_lines
 from .request import has_header
 from .redirects import CurlRedirectHandler
@@ -43,28 +62,28 @@ class Transfer(object):
 
     def __init__(self, typed_url, target, method, plan):
         self.typed_url = typed_url or ''  # as the caller typed it: %{url}
-        self.target = target              # the URL requested first
+        self.target = target  # the URL requested first
         self.method = method
         self.plan = plan
         self.started = time.monotonic()
-        self.first_byte = None            # when the final response's headers arrived
-        self.version = None               # http.client's: 10, 11
+        self.first_byte = None  # when the final response's headers arrived
+        self.version = None  # http.client's: 10, 11
         self.status = 0
         self.header_items = []
         self.size_download = 0
         self.errormsg = ''
-        self.sent = []                    # (url, method, body size): every request, redirects included
+        self.sent = []  # (url, method, body size): every request, redirects included
         # -w's timings (time.monotonic(), None until reached) and addresses.
         self.t_namelookup = self.t_connect = self.t_appconnect = None
         self.t_pretransfer = self.t_posttransfer = None
-        self.final_start = None           # when the last request (after any redirects) began
-        self.remote = self.local = None   # (address, port) of the last connection
+        self.final_start = None  # when the last request (after any redirects) began
+        self.remote = self.local = None  # (address, port) of the last connection
         self.connects = 0
         self.retries = 0
         self.size_request = 0
         self.size_header = 0
         self.size_delivered = 0
-        self.connect_status = 0           # the last CONNECT reply's status
+        self.connect_status = 0  # the last CONNECT reply's status
 
     def responded(self, response):
         self.first_byte = time.monotonic()
@@ -137,8 +156,9 @@ class Pace(object):
             limit, seconds = self.low_speed
             if now - self.window >= seconds:
                 if (self.total - self.window_total) / (now - self.window) < limit:
-                    raise TooSlow('Operation too slow. Less than %d bytes/sec transferred the last %d seconds'
-                                  % (limit, seconds))
+                    raise TooSlow(
+                        'Operation too slow. Less than %d bytes/sec transferred the last %d seconds' % (limit, seconds)
+                    )
                 self.window, self.window_total = now, self.total
 
 
@@ -155,7 +175,7 @@ class PacedBody(object):
     def __iter__(self):
         pace = Pace(self.rate)
         for offset in range(0, len(self.data), self.PIECE):
-            piece = self.data[offset:offset + self.PIECE]
+            piece = self.data[offset : offset + self.PIECE]
             yield piece
             pace(len(piece))
 
@@ -217,8 +237,9 @@ def _header_defect(response):
     import email.errors
 
     message = getattr(response, 'headers', None)
-    return any(isinstance(d, email.errors.MissingHeaderBodySeparatorDefect)
-               for d in getattr(message, 'defects', ()) or ())
+    return any(
+        isinstance(d, email.errors.MissingHeaderBodySeparatorDefect) for d in getattr(message, 'defects', ()) or ()
+    )
 
 
 def build_opener(args, plan, context, transfer, removed):
@@ -230,13 +251,23 @@ def build_opener(args, plan, context, transfer, removed):
     args.connection.connect_replies = []
     args.connection.transfer = transfer
     handlers = args.connection_handlers(context) or [
-        ConnectHTTPHandler(args.connection), ConnectHTTPSHandler(args.connection, context)]
+        ConnectHTTPHandler(args.connection),
+        ConnectHTTPSHandler(args.connection, context),
+    ]
     handlers.append(urllib.request.ProxyHandler({}))
     if plan is not None:
         proxy_auth = _proxy_auth(args, plan)
-        handlers.append(AgentProxyHandler(plan, tunnel_http=args.proxytunnel, headers=args.proxy_headers(),
-                                          socks=args.socks, preproxy=args.socks_pre, proxy_tls=args.proxy_tls(),
-                                          proxy_auth=proxy_auth))
+        handlers.append(
+            AgentProxyHandler(
+                plan,
+                tunnel_http=args.proxytunnel,
+                headers=args.proxy_headers(),
+                socks=args.socks,
+                preproxy=args.socks_pre,
+                proxy_tls=args.proxy_tls(),
+                proxy_auth=proxy_auth,
+            )
+        )
         if proxy_auth is not None:
             # Plain proxying: urllib's handlers answer the 407, once.
             passwords = _ProxyPassword(proxy_auth.user, proxy_auth.password)
@@ -324,14 +355,17 @@ def transport_error(args, reason, transfer, may_retry):
         if via_proxy:
             proxy_host = _host_port(transfer.plan.proxy)[0]
             code, message = EXIT_RESOLVE_PROXY, 'Could not resolve proxy: %s' % proxy_host
-            if transfer.plan.proxy.split('://', 1)[0].lower().startswith('socks') \
-                    and compat.socks_proxy_unresolved_code() == EXIT_RESOLVE:
+            if (
+                transfer.plan.proxy.split('://', 1)[0].lower().startswith('socks')
+                and compat.socks_proxy_unresolved_code() == EXIT_RESOLVE
+            ):
                 code, message = EXIT_RESOLVE, 'Could not resolve host: %s' % proxy_host  # before curl 8.14
         else:
             code, message = EXIT_RESOLVE, 'Could not resolve host: %s' % _host_port(_hop_url(transfer))[0]
     elif isinstance(reason, (socket.timeout, TimeoutError)) or 'timed out' in text:
         code, message = EXIT_TIMEOUT, 'Operation timed out after %d milliseconds with 0 bytes received' % (
-            _elapsed_ms(transfer))
+            _elapsed_ms(transfer)
+        )
     elif isinstance(reason, ssl.SSLError) and 'CERTIFICATE_REQUIRED' in str(reason).upper():
         # TLS 1.3 sends "certificate required" after the handshake, on the
         # first read: curl's receive error.
@@ -348,13 +382,20 @@ def transport_error(args, reason, transfer, may_retry):
             code, message = EXIT_HTTP, 'The requested URL returned error: %d' % status
         else:
             code, message = compat.connect_refused_code(), 'CONNECT tunnel failed, response %d' % status
-    elif via_proxy and isinstance(reason, (http.client.RemoteDisconnected, ConnectionResetError)) \
-            and (urllib.parse.urlsplit(_hop_url(transfer)).scheme == 'https' or args.proxytunnel):
+    elif (
+        via_proxy
+        and isinstance(reason, (http.client.RemoteDisconnected, ConnectionResetError))
+        and (urllib.parse.urlsplit(_hop_url(transfer)).scheme == 'https' or args.proxytunnel)
+    ):
         code, message = EXIT_RECV, 'Proxy CONNECT aborted'
     elif isinstance(reason, (ConnectionRefusedError, socket.timeout)) or not isinstance(reason, ConnectionError):
         host, port = _host_port(transfer.plan.proxy if via_proxy else _hop_url(transfer))
         code, message = EXIT_CONNECT, 'Failed to connect to %s port %d after %d ms: %s' % (
-            host, port, _elapsed_ms(transfer), 'Could not connect to server' if isinstance(reason, ConnectionRefusedError) else text)
+            host,
+            port,
+            _elapsed_ms(transfer),
+            'Could not connect to server' if isinstance(reason, ConnectionRefusedError) else text,
+        )
     elif isinstance(reason, ConnectionResetError):
         code, message = EXIT_RECV, 'Recv failure: Connection reset by peer'
     else:
@@ -376,8 +417,11 @@ def reply_error(args, exc, transfer, may_retry):
     elif isinstance(exc, http.client.BadStatusLine):
         line = str(exc.args[0]) if exc.args else ''
         code = EXIT_PROTOCOL
-        message = ('Unsupported HTTP/1 subversion in response' if line.startswith('HTTP/')
-                   else 'Received HTTP/0.9 when not allowed')
+        message = (
+            'Unsupported HTTP/1 subversion in response'
+            if line.startswith('HTTP/')
+            else 'Received HTTP/0.9 when not allowed'
+        )
     elif isinstance(exc, http.client.HTTPException):
         code, message = EXIT_WEIRD_REPLY, 'Weird server reply: %s' % exc
     elif isinstance(exc, (socket.timeout, TimeoutError)):
@@ -449,8 +493,12 @@ def body_error(args, exc, transfer, chunked):
         return fail(args, transfer, EXIT_TIMEOUT, str(exc))
     low = args.low_speed()
     if low and isinstance(exc, (socket.timeout, TimeoutError)):
-        return fail(args, transfer, EXIT_TIMEOUT, 'Operation too slow. Less than %d bytes/sec transferred the last %d seconds'
-                    % low)
+        return fail(
+            args,
+            transfer,
+            EXIT_TIMEOUT,
+            'Operation too slow. Less than %d bytes/sec transferred the last %d seconds' % low,
+        )
     if isinstance(exc, http.client.IncompleteRead):
         if chunked and _bad_chunk(exc):
             return fail(args, transfer, EXIT_RECV, 'chunk hex-length char not a hex digit')
@@ -458,8 +506,13 @@ def body_error(args, exc, transfer, chunked):
             return fail(args, transfer, EXIT_PARTIAL, 'transfer closed with outstanding read data remaining')
         return fail(args, transfer, EXIT_PARTIAL, 'end of response with %d bytes missing' % (exc.expected or 0))
     if isinstance(exc, (socket.timeout, TimeoutError)):
-        return fail(args, transfer, EXIT_TIMEOUT, 'Operation timed out after %d milliseconds with %d bytes received' % (
-            _elapsed_ms(transfer), transfer.size_download))
+        return fail(
+            args,
+            transfer,
+            EXIT_TIMEOUT,
+            'Operation timed out after %d milliseconds with %d bytes received'
+            % (_elapsed_ms(transfer), transfer.size_download),
+        )
     if isinstance(exc, ConnectionResetError):
         return fail(args, transfer, EXIT_RECV, 'Recv failure: Connection reset by peer')
     return fail(args, transfer, EXIT_RECV, 'Recv failure: %s' % exc)
@@ -492,7 +545,9 @@ def exchange(args, opener, req, timeout, url, transfer, may_retry=False):
             transfer.header_items = list(exc.headers.items()) if exc.headers else []
             if may_retry and args.retry_all_errors:
                 raise Retry(' (retrying all errors)')
-            limit = args.max_redirs if args.max_redirs is not None else urllib.request.HTTPRedirectHandler.max_redirections
+            limit = (
+                args.max_redirs if args.max_redirs is not None else urllib.request.HTTPRedirectHandler.max_redirections
+            )
             return fail(args, transfer, EXIT_REDIRECTS, 'Maximum (%d) redirects followed' % limit)
     except NotImplementedError:
         raise
@@ -710,10 +765,15 @@ def run(args):
         print('Headers:', headers, file=sys.stderr)
         if plan is not None and not plan.bypasses(url):
             # The URL only, never the credential: this line ends up in logs.
-            print('Proxy%s: %s%s' % (' (prefix %s)' % plan.endpoint if plan.endpoint else '',
-                                     agent_proxy.redact(plan.proxy),
-                                     ' (with %s)' % plan.auth_header if plan.authorization else ''),
-                  file=sys.stderr)
+            print(
+                'Proxy%s: %s%s'
+                % (
+                    ' (prefix %s)' % plan.endpoint if plan.endpoint else '',
+                    agent_proxy.redact(plan.proxy),
+                    ' (with %s)' % plan.auth_header if plan.authorization else '',
+                ),
+                file=sys.stderr,
+            )
 
     timeout = args.request_timeout()
     limits = http.client._MAXLINE, http.client._MAXHEADERS
@@ -748,9 +808,11 @@ def _attempts(args, typed, url, method, plan, context, removed, data, headers, t
             if args.retry_max_time:
                 wait = max(0.0, min(wait, args.retry_max_time - (time.monotonic() - first)))
             if not args.silent:
-                print('Warning: Problem %s. Will retry in %s. %s left.' % (
-                    retry.what, _count(int(round(wait)), 'second', 'seconds'), _count(retries, 'retry', 'retries')),
-                    file=sys.stderr)
+                print(
+                    'Warning: Problem %s. Will retry in %s. %s left.'
+                    % (retry.what, _count(int(round(wait)), 'second', 'seconds'), _count(retries, 'retry', 'retries')),
+                    file=sys.stderr,
+                )
             sleep(wait)
             retries -= 1
             backoff = min(backoff * 2, MAX_RETRY_SLEEP)

@@ -5,6 +5,7 @@ codes are curl's (an HTTP status is a response, -f is 22, transport 6/7/28),
 sends only the rows that apply to the URL, -c keeps HttpOnly and expiry, -V
 answers, an unsupported flag is `curl: (2) …` and never a traceback.
 """
+
 import gzip
 import io
 import json
@@ -47,15 +48,22 @@ class _Edge(BaseHTTPRequestHandler):
         if self.path == "/gz":
             return self._reply(200, gzip.compress(b"unzipped"), [("Content-Encoding", "gzip")])
         if self.path == "/setcookie":
-            return self._reply(200, b"ok", [
-                ("Set-Cookie", "sid=abc; Path=/; HttpOnly; Max-Age=3600"),
-                ("Set-Cookie", "flash=1; Path=/"),
-            ])
+            return self._reply(
+                200,
+                b"ok",
+                [
+                    ("Set-Cookie", "sid=abc; Path=/; HttpOnly; Max-Age=3600"),
+                    ("Set-Cookie", "flash=1; Path=/"),
+                ],
+            )
         if self.path == "/echo":
-            payload = json.dumps({
-                "method": self.command, "headers": {k.lower(): v for k, v in self.headers.items()},
-                "body": body.decode("utf-8", "replace"),
-            }).encode()
+            payload = json.dumps(
+                {
+                    "method": self.command,
+                    "headers": {k.lower(): v for k, v in self.headers.items()},
+                    "body": body.decode("utf-8", "replace"),
+                }
+            ).encode()
             return self._reply(200, payload, [("Content-Type", "application/json")])
         return self._reply(200, b"hello")
 
@@ -144,13 +152,18 @@ def test_head_prints_the_headers_by_itself(origin, monkeypatch, capsysbinary):
 def test_several_d_join_and_a_body_gets_the_form_content_type(origin, tmp_path, monkeypatch, capsysbinary):
     f = tmp_path / "part.txt"
     f.write_bytes(b"c=3\r\n")
-    rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "-d", "a=1", "-d", "b=2", "-d", "@" + str(f), origin + "/echo"])
+    rc, out = _fallback(
+        monkeypatch, capsysbinary, ["-s", "-d", "a=1", "-d", "b=2", "-d", "@" + str(f), origin + "/echo"]
+    )
     seen = _echo(out)
     assert rc == 0 and seen["method"] == "POST" and seen["body"] == "a=1&b=2&c=3"
     assert seen["headers"]["content-type"] == "application/x-www-form-urlencoded"
     # An explicit Content-Type is kept; --data-binary keeps the file's bytes.
-    rc, out = _fallback(monkeypatch, capsysbinary, [
-        "-s", "-H", "Content-Type: application/json", "--data-binary", "@" + str(f), origin + "/echo"])
+    rc, out = _fallback(
+        monkeypatch,
+        capsysbinary,
+        ["-s", "-H", "Content-Type: application/json", "--data-binary", "@" + str(f), origin + "/echo"],
+    )
     seen = _echo(out)
     assert seen["headers"]["content-type"] == "application/json" and seen["body"] == "c=3\r\n"
 
@@ -162,8 +175,11 @@ def test_d_from_stdin(origin, monkeypatch, capsysbinary):
 
 
 def test_header_removal_and_empty_forms(origin, monkeypatch, capsysbinary):
-    rc, out = _fallback(monkeypatch, capsysbinary, [
-        "-s", "-H", "User-Agent:", "-H", "X-Empty;", "-H", "accept-encoding: br", origin + "/echo"])
+    rc, out = _fallback(
+        monkeypatch,
+        capsysbinary,
+        ["-s", "-H", "User-Agent:", "-H", "X-Empty;", "-H", "accept-encoding: br", origin + "/echo"],
+    )
     headers = _echo(out)["headers"]
     assert rc == 0
     assert "user-agent" not in headers, "`Name:` removes the header, the shim's default included"
@@ -172,8 +188,11 @@ def test_header_removal_and_empty_forms(origin, monkeypatch, capsysbinary):
 
 
 def test_user_referer_compressed_and_max_time(origin, monkeypatch, capsysbinary):
-    rc, out = _fallback(monkeypatch, capsysbinary, [
-        "-s", "-m", "5", "-u", "me:pw", "-e", "http://ref/", "--compressed", origin + "/echo"])
+    rc, out = _fallback(
+        monkeypatch,
+        capsysbinary,
+        ["-s", "-m", "5", "-u", "me:pw", "-e", "http://ref/", "--compressed", origin + "/echo"],
+    )
     headers = _echo(out)["headers"]
     assert rc == 0
     assert headers["authorization"] == "Basic bWU6cHc="
@@ -200,16 +219,22 @@ def test_location_follows_and_max_redirs_caps(origin, monkeypatch, capsysbinary)
 def test_b_sends_only_the_rows_that_apply(origin, tmp_path, monkeypatch, capsysbinary):
     later = str(int(time.time()) + 3600)
     jar = tmp_path / "jar.txt"
-    jar.write_text("\n".join([
-        "# Netscape HTTP Cookie File",
-        "\t".join(["127.0.0.1", "FALSE", "/", "FALSE", "0", "host", "1"]),
-        "\t".join(["#HttpOnly_127.0.0.1", "FALSE", "/", "FALSE", later, "hidden", "2"]),
-        "\t".join(["other.example", "FALSE", "/", "FALSE", "0", "foreign", "3"]),
-        "\t".join(["127.0.0.1", "FALSE", "/admin", "FALSE", "0", "elsewhere", "4"]),
-        "\t".join(["127.0.0.1", "FALSE", "/", "TRUE", "0", "onlyhttps", "5"]),
-        "\t".join(["127.0.0.1", "FALSE", "/", "FALSE", "1000000000", "expired", "6"]),
-        "\t".join([".0.0.1", "TRUE", "/", "FALSE", "0", "sub", "7"]),
-    ]) + "\n", encoding="utf-8")
+    jar.write_text(
+        "\n".join(
+            [
+                "# Netscape HTTP Cookie File",
+                "\t".join(["127.0.0.1", "FALSE", "/", "FALSE", "0", "host", "1"]),
+                "\t".join(["#HttpOnly_127.0.0.1", "FALSE", "/", "FALSE", later, "hidden", "2"]),
+                "\t".join(["other.example", "FALSE", "/", "FALSE", "0", "foreign", "3"]),
+                "\t".join(["127.0.0.1", "FALSE", "/admin", "FALSE", "0", "elsewhere", "4"]),
+                "\t".join(["127.0.0.1", "FALSE", "/", "TRUE", "0", "onlyhttps", "5"]),
+                "\t".join(["127.0.0.1", "FALSE", "/", "FALSE", "1000000000", "expired", "6"]),
+                "\t".join([".0.0.1", "TRUE", "/", "FALSE", "0", "sub", "7"]),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "-b", str(jar), origin + "/echo"])
     assert rc == 0
     cookie = _echo(out)["headers"]["cookie"]
@@ -224,10 +249,11 @@ def test_c_writes_httponly_and_expiry_on_top_of_b(origin, tmp_path, monkeypatch,
     jar.write_text("\t".join(["127.0.0.1", "FALSE", "/", "FALSE", "0", "flash", "old"]) + "\n", encoding="utf-8")
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "-b", str(jar), "-c", str(jar), origin + "/setcookie"])
     assert rc == 0
-    rows = {r.split("\t")[5]: r.split("\t") for r in jar.read_text(encoding="utf-8").splitlines() if not r.startswith("# ")}
+    rows = {
+        r.split("\t")[5]: r.split("\t") for r in jar.read_text(encoding="utf-8").splitlines() if not r.startswith("# ")
+    }
     assert rows["sid"][0] == "#HttpOnly_127.0.0.1" and int(rows["sid"][4]) > int(time.time()) + 3000
     assert rows["flash"][6] == "1", "the response's value replaces the jar's"
     # ... and the file reads back: the HttpOnly row is sent, the session row too.
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "-b", str(jar), origin + "/echo"])
     assert sorted(_echo(out)["headers"]["cookie"].split("; ")) == ["flash=1", "sid=abc"]
-

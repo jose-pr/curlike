@@ -7,6 +7,7 @@ right Proxy-Authorization and never forwards -- a body of ``via-proxy`` proves
 the request went through it with the credential, ``via-gateway`` that it went to
 the prefix gateway, ``hello`` that it went direct.
 """
+
 import base64
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -17,9 +18,18 @@ from curlike import shim as curl
 from httplib import proxy as agent_proxy  # noqa: E402  (lib/, via conftest)
 
 _ALL_VARS = [
-    "HTTPLIB_PROXY", "HTTPLIB_PROXY_AUTH", "HTTPLIB_PROXY_TYPE", "HTTP_PROXY_AUTH",
-    "HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy",
-    "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy",
+    "HTTPLIB_PROXY",
+    "HTTPLIB_PROXY_AUTH",
+    "HTTPLIB_PROXY_TYPE",
+    "HTTP_PROXY_AUTH",
+    "HTTPS_PROXY",
+    "https_proxy",
+    "HTTP_PROXY",
+    "http_proxy",
+    "ALL_PROXY",
+    "all_proxy",
+    "NO_PROXY",
+    "no_proxy",
 ]
 
 BASIC = "Basic " + base64.b64encode(b"agent:s3cret").decode()
@@ -155,6 +165,7 @@ def gateway():
 # curl shim, real-curl passthrough: the agent proxy is handed to curl
 # --------------------------------------------------------------------------
 
+
 def _capture_real_curl(monkeypatch):
     calls = []
     monkeypatch.setattr(curl, "find_real_curl", lambda *a: "/usr/bin/curl")
@@ -172,9 +183,12 @@ def test_real_curl_gets_the_agent_proxy_and_the_header(monkeypatch):
     monkeypatch.setenv("HTTPLIB_PROXY_AUTH", BEARER)
     assert curl.main(["-s", "https://api.example.com/"]) == 0
     assert calls[0][1:] == [
-        "--proxy", "http://proxy.example:3128",
-        "--proxy-header", "Proxy-Authorization: " + BEARER,
-        "-s", "https://api.example.com/",
+        "--proxy",
+        "http://proxy.example:3128",
+        "--proxy-header",
+        "Proxy-Authorization: " + BEARER,
+        "-s",
+        "https://api.example.com/",
     ]
 
 
@@ -214,7 +228,12 @@ def test_real_curl_untouched_without_agents_proxy_or_when_caller_names_a_proxy(m
         assert calls[-1][1:] == [*steer, "https://api.example.com/"], steer
     # An option VALUE that merely looks like a flag is not steering.
     curl.main(["-d", "--proxy=trap", "https://api.example.com/"])
-    assert calls[-1][1:5] == ["--proxy", "http://proxy.example:3128", "--proxy-header", "Proxy-Authorization: " + BEARER]
+    assert calls[-1][1:5] == [
+        "--proxy",
+        "http://proxy.example:3128",
+        "--proxy-header",
+        "Proxy-Authorization: " + BEARER,
+    ]
 
 
 def test_real_curl_caller_credentials_keep_the_agent_proxy(monkeypatch):
@@ -238,6 +257,7 @@ def test_real_curl_runs_as_typed_when_the_agent_proxy_is_malformed(monkeypatch, 
 # --------------------------------------------------------------------------
 # curl shim, stdlib fallback: authenticates to the proxy, honours kind + bypass
 # --------------------------------------------------------------------------
+
 
 def _fallback(monkeypatch, capsysbinary, argv):
     monkeypatch.setattr(curl, "find_real_curl", lambda *a: None)
@@ -287,7 +307,9 @@ def test_fallback_explicit_proxy_never_borrows_the_agent_credential(target, prox
     monkeypatch.setenv("HTTPLIB_PROXY", "http://elsewhere.example:1")
     monkeypatch.setenv("HTTPLIB_PROXY_AUTH", BASIC)
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "-i", "-x", "http://" + proxy, target + "/x"])
-    assert rc == 0 and out.out.startswith(b"HTTP/1.1 407"), "-x names a different proxy; the agent proxy's credential is not its"
+    assert rc == 0 and out.out.startswith(
+        b"HTTP/1.1 407"
+    ), "-x names a different proxy; the agent proxy's credential is not its"
 
 
 def test_fallback_no_proxy_goes_direct(target, proxy, monkeypatch, capsysbinary):
@@ -331,6 +353,7 @@ def test_fallback_verbose_never_prints_the_credential(target, proxy, monkeypatch
 # A bad HTTPLIB_PROXY_TYPE is a configuration error, reported as such
 # --------------------------------------------------------------------------
 
+
 def test_bad_type_is_harmless_without_a_proxy(target, monkeypatch, capsysbinary):
     monkeypatch.setenv("HTTPLIB_PROXY_TYPE", "socks5")
     calls = _capture_real_curl(monkeypatch)
@@ -357,6 +380,7 @@ def test_bad_type_with_a_proxy(target, monkeypatch, capsysbinary):
 # Redirects: every hop is re-decided; the credential never reaches an origin
 # --------------------------------------------------------------------------
 
+
 def test_fallback_redirect_hop_stays_on_the_proxy(target, proxy, monkeypatch, capsysbinary):
     monkeypatch.setenv("HTTPLIB_PROXY", "http://" + proxy)
     monkeypatch.setenv("HTTPLIB_PROXY_AUTH", BASIC)
@@ -366,7 +390,9 @@ def test_fallback_redirect_hop_stays_on_the_proxy(target, proxy, monkeypatch, ca
     assert _Target.seen == [], "the origin was never contacted directly"
 
 
-def test_fallback_redirect_to_a_no_proxy_host_goes_direct_without_the_credential(target, proxy, monkeypatch, capsysbinary):
+def test_fallback_redirect_to_a_no_proxy_host_goes_direct_without_the_credential(
+    target, proxy, monkeypatch, capsysbinary
+):
     monkeypatch.setenv("HTTPLIB_PROXY", "http://" + proxy)
     monkeypatch.setenv("HTTPLIB_PROXY_AUTH", BEARER)
     _Proxy.expected = BEARER
@@ -375,7 +401,9 @@ def test_fallback_redirect_to_a_no_proxy_host_goes_direct_without_the_credential
     monkeypatch.setenv("NO_PROXY", "127.0.0.1")
     monkeypatch.setenv("HTTPLIB_PROXY", "http://" + proxy)
     # Force the first hop through the proxy by asking for a non-bypassed name.
-    rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "-L", "http://localhost:%s/redirect" % target.rsplit(":", 1)[1]])
+    rc, out = _fallback(
+        monkeypatch, capsysbinary, ["-s", "-L", "http://localhost:%s/redirect" % target.rsplit(":", 1)[1]]
+    )
     # localhost is proxied (not in NO_PROXY); the proxy answers 302 -> http://localhost.../final
     # which is proxied again -- so exercise the direct case explicitly instead:
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "-L", target + "/redirect"])
@@ -392,4 +420,3 @@ def test_fallback_prefix_redirect_is_wrapped_again(target, gateway, monkeypatch,
     assert [path for path, _ in _Gateway.seen] == ["/fetch/" + target + "/redirect", "/fetch/" + target + "/final"]
     assert all(auth == BEARER for _, auth in _Gateway.seen)
     assert _Target.seen == []
-

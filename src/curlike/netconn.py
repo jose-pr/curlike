@@ -6,6 +6,7 @@ wrapped for the length of the transfer -- so the request keeps the host the
 caller named: its ``Host`` header, TLS server name and certificate check are
 the URL's, as in curl. ``--unix-socket`` replaces the TCP connection with one
 to a Unix domain socket (the Docker API's ``/var/run/docker.sock``)."""
+
 import contextlib
 import http.client
 import ipaddress
@@ -85,10 +86,10 @@ class DnsOverride(object):
 
     def _lookup(self, name, rdtype):
         if self.doh_url:
-            return self.netimps.resolve_doh(name, self.doh_url, rdtype=rdtype, timeout=self.timeout,
-                                            fetch=self._fetch)
-        return self.netimps.resolve(name, rdtype, ns=self.servers, source=self.sources, timeout=self.timeout,
-                                    backends=['dnspython', 'wire'])
+            return self.netimps.resolve_doh(name, self.doh_url, rdtype=rdtype, timeout=self.timeout, fetch=self._fetch)
+        return self.netimps.resolve(
+            name, rdtype, ns=self.servers, source=self.sources, timeout=self.timeout, backends=['dnspython', 'wire']
+        )
 
     def _fetch(self, url, body, headers, timeout):
         """The DoH request: https only (curl asks nothing over http), verified
@@ -96,8 +97,9 @@ class DnsOverride(object):
         direct, never through a proxy."""
         if not url.lower().startswith('https://'):
             raise ValueError('--doh-url must be https: %s' % url)
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),
-                                             urllib.request.HTTPSHandler(context=self.doh_context))
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=self.doh_context)
+        )
         request = urllib.request.Request(url, data=body, headers=headers, method='POST')
         with opener.open(request, timeout=timeout) as response:
             kind = response.headers.get('Content-Type', '').split(';')[0].strip().lower()
@@ -163,7 +165,9 @@ def resolving(family=0, resolve=(), connect_to=(), dns=None):
                 if wanted and wanted != (socket.AF_INET6 if v6 else socket.AF_INET):
                     continue
                 sockaddr = (addr, number, 0, 0) if v6 else (addr, number)
-                out.append((socket.AF_INET6 if v6 else socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', sockaddr))
+                out.append(
+                    (socket.AF_INET6 if v6 else socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', sockaddr)
+                )
             if out:
                 return out
         if dns is not None and name and not _is_address(name):
@@ -171,8 +175,16 @@ def resolving(family=0, resolve=(), connect_to=(), dns=None):
             if found is not None:
                 if not found:
                     raise socket.gaierror(socket.EAI_NONAME, 'Could not resolve host: %s' % name)
-                return [(socket.AF_INET6 if ':' in a else socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '',
-                         (a, number, 0, 0) if ':' in a else (a, number)) for a in found]
+                return [
+                    (
+                        socket.AF_INET6 if ':' in a else socket.AF_INET,
+                        socket.SOCK_STREAM,
+                        socket.IPPROTO_TCP,
+                        '',
+                        (a, number, 0, 0) if ':' in a else (a, number),
+                    )
+                    for a in found
+                ]
         return real(name, number, wanted, type, proto, flags)
 
     socket.getaddrinfo = getaddrinfo

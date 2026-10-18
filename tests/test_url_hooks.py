@@ -2,6 +2,7 @@
 a wrapper program in the curl shim's place -- under a prefix gateway too,
 where the wire URL is the gateway's and must not be what is matched.
 """
+
 import json
 import os
 import sys
@@ -48,7 +49,9 @@ def _no_calls():
 
 
 def test_requested_url_from_argv():
-    assert curl.requested_url(["-s", "-H", "X: --url", "example.com/a"]) == "http://example.com/a", "curl's default scheme"
+    assert (
+        curl.requested_url(["-s", "-H", "X: --url", "example.com/a"]) == "http://example.com/a"
+    ), "curl's default scheme"
     assert curl.requested_url(["--url", "http://h/b", "-o", "f"]) == "http://h/b"
     assert curl.requested_url(["-sx", "http://proxy/", "http://h/c"]) == "http://h/c"
     assert curl.requested_url(["-s"]) is None

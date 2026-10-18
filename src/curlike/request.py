@@ -1,5 +1,6 @@
 """Request options: the URL and its query, the method, and the headers --
 the ones options imply, then ``-H`` on top."""
+
 import re
 import urllib.parse
 from typing import List, Optional
@@ -15,10 +16,37 @@ SCHEMES = ('http', 'https')
 #: Schemes curl speaks and the fallback does not: refused out loud (exit 2),
 #: as any flag it lacks. A scheme curl does not know either is curl's own
 #: exit 1.
-CURL_SCHEMES = frozenset([
-    'dict', 'file', 'ftp', 'ftps', 'gopher', 'gophers', 'imap', 'imaps', 'ipfs', 'ipns', 'ldap', 'ldaps', 'mqtt',
-    'pop3', 'pop3s', 'rtmp', 'rtsp', 'scp', 'sftp', 'smb', 'smbs', 'smtp', 'smtps', 'telnet', 'tftp', 'ws', 'wss',
-])
+CURL_SCHEMES = frozenset(
+    [
+        'dict',
+        'file',
+        'ftp',
+        'ftps',
+        'gopher',
+        'gophers',
+        'imap',
+        'imaps',
+        'ipfs',
+        'ipns',
+        'ldap',
+        'ldaps',
+        'mqtt',
+        'pop3',
+        'pop3s',
+        'rtmp',
+        'rtsp',
+        'scp',
+        'sftp',
+        'smb',
+        'smbs',
+        'smtp',
+        'smtps',
+        'telnet',
+        'tftp',
+        'ws',
+        'wss',
+    ]
+)
 
 
 #: An IPv6 literal host, which curl does not take for a glob range.
@@ -42,11 +70,12 @@ def check_glob(url):
         elif char in '}]':
             if depth is None or '{['.index(depth[0]) != '}]'.index(char):
                 raise EarlyExit(EXIT_URL, '(3) unmatched close brace/bracket in position %d:' % (index + 1))
-            if char == ']' and not re.match(r'^(?:[a-zA-Z]-[a-zA-Z]|\d+-\d+)(?::\d+)?$', url[depth[1] + 1:index]):
+            if char == ']' and not re.match(r'^(?:[a-zA-Z]-[a-zA-Z]|\d+-\d+)(?::\d+)?$', url[depth[1] + 1 : index]):
                 raise EarlyExit(EXIT_URL, '(3) bad range in position %d:' % (depth[1] + 2))
             raise NotImplementedError(
                 'URL globbing (%s in the URL) makes several transfers, which the fallback does not do: '
-                'pass -g to send the URL as typed' % url[depth[1]:index + 1])
+                'pass -g to send the URL as typed' % url[depth[1] : index + 1]
+            )
     if depth is not None:
         if depth[0] == '{':
             raise EarlyExit(EXIT_URL, '(3) unmatched brace in position %d:' % (len(url) + 1))
@@ -66,8 +95,10 @@ def check_url(url):
     try:
         parts = urllib.parse.urlsplit(url)
     except ValueError as exc:
-        raise LocalError(EXIT_URL, 'URL rejected: %s' % (
-            'Bad IPv6 address' if 'IPv6' in str(exc) else 'Malformed input to a URL function'))
+        raise LocalError(
+            EXIT_URL,
+            'URL rejected: %s' % ('Bad IPv6 address' if 'IPv6' in str(exc) else 'Malformed input to a URL function'),
+        )
     try:
         parts.port
     except ValueError:
@@ -102,9 +133,11 @@ def parse_protocols(spec, flag, start):
             if not rejects_unknown_protocols():
                 names = set()  # before curl 8.18: the name is ignored, its = / - still applied
             else:
-                raise EarlyExit(EXIT_USAGE, "unrecognized protocol '%s'\ncurl: option %s: is badly used here\n"
-                                            "curl: try 'curl --help' or 'curl --manual' for more information"
-                                            % (name, flag))
+                raise EarlyExit(
+                    EXIT_USAGE,
+                    "unrecognized protocol '%s'\ncurl: option %s: is badly used here\n"
+                    "curl: try 'curl --help' or 'curl --manual' for more information" % (name, flag),
+                )
         if op == '=':
             allowed = set(names)
         elif op == '-':
@@ -263,10 +296,15 @@ class RequestArgs(Group):
         usage error."""
         url = self.url or self.url_positional
         if not url:
-            raise EarlyExit(EXIT_USAGE, "(2) no URL specified\ncurl: try 'curl --help' or 'curl --manual' for more information")
+            raise EarlyExit(
+                EXIT_USAGE, "(2) no URL specified\ncurl: try 'curl --help' or 'curl --manual' for more information"
+            )
         if self.proto_default is not None and self.proto_default.lower() not in ALL_PROTOCOLS:
-            raise EarlyExit(1, "option --proto-default: a specified protocol is unsupported by libcurl\n"
-                               "curl: try 'curl --help' or 'curl --manual' for more information")
+            raise EarlyExit(
+                1,
+                "option --proto-default: a specified protocol is unsupported by libcurl\n"
+                "curl: try 'curl --help' or 'curl --manual' for more information",
+            )
         url = default_scheme(url, (self.proto_default or 'http').lower())
         if not self.globoff:
             check_glob(url)
@@ -285,7 +323,9 @@ class RequestArgs(Group):
         if redirect:
             allowed &= parse_protocols(self.proto_redir, '--proto-redir', DEFAULT_REDIRECT_PROTOCOLS)
         if scheme not in allowed:
-            raise LocalError(EXIT_PROTOCOL, 'Protocol "%s" is disabled%s' % (scheme, ' (in redirect)' if redirect else ''))
+            raise LocalError(
+                EXIT_PROTOCOL, 'Protocol "%s" is disabled%s' % (scheme, ' (in redirect)' if redirect else '')
+            )
 
     def request_method(self, has_body, uploading):
         """-I is HEAD; else -X; else GET with -G, PUT with -T, POST with a

@@ -4,6 +4,7 @@
 it must present (``--pinnedpubkey``) -- one connection class per request,
 built by :class:`Connector`, opened by :class:`ConnectHTTPHandler` /
 :class:`ConnectHTTPSHandler` in place of urllib's own."""
+
 import base64
 import errno
 import hashlib
@@ -29,8 +30,7 @@ _DEFAULT_TIMEOUT = getattr(socket, "_GLOBAL_DEFAULT_TIMEOUT", None)
 #: Proxy URL schemes that are SOCKS, by the protocol each speaks: curl's
 #: ``socks://`` is SOCKS4; ``socks5`` resolves the name locally, ``socks5h``
 #: and ``socks4a`` let the proxy resolve it.
-SOCKS_SCHEMES = {'socks': 'socks4', 'socks4': 'socks4', 'socks4a': 'socks4a', 'socks5': 'socks5',
-                 'socks5h': 'socks5h'}
+SOCKS_SCHEMES = {'socks': 'socks4', 'socks4': 'socks4', 'socks4a': 'socks4a', 'socks5': 'socks5', 'socks5h': 'socks5h'}
 
 
 class Socks(object):
@@ -98,10 +98,12 @@ def _socks4(sock, socks, host, port):
             address, name = socket.inet_aton(_local_address(socks, host, port, socket.AF_INET)), b''
     sock.sendall(struct.pack('!BBH', 4, 1, port) + address + user + name)
     reply = _exact(sock, 8)
-    if reply[1] != 0x5a:
+    if reply[1] != 0x5A:
         bound = '%s:%d' % (socket.inet_ntoa(reply[4:8]), struct.unpack('!H', reply[2:4])[0])
-        raise LocalError(EXIT_PROXY, '[SOCKS] cannot complete SOCKS4 connection to %s. (%d), request rejected or '
-                                     'failed.' % (bound, reply[1]))
+        raise LocalError(
+            EXIT_PROXY,
+            '[SOCKS] cannot complete SOCKS4 connection to %s. (%d), request rejected or ' 'failed.' % (bound, reply[1]),
+        )
 
 
 def _socks5(sock, socks, host, port):
@@ -137,6 +139,7 @@ def _socks5(sock, socks, host, port):
     _exact(sock, {1: 4, 4: 16}.get(kind, 0) or _exact(sock, 1)[0])
     _exact(sock, 2)
 
+
 #: A bind that failed because of the address or port, not the peer: the next
 #: port of a --local-port range is tried.
 _BIND_ERRNOS = {errno.EADDRINUSE, errno.EADDRNOTAVAIL, errno.EACCES, 10013, 10048, 10049}
@@ -150,8 +153,11 @@ def parse_local_port(spec):
     except ValueError:
         low = high = -1
     if not 0 < low <= high <= 65535:
-        raise EarlyExit(EXIT_USAGE, "option --local-port: is badly used here\n"
-                                    "curl: try 'curl --help' or 'curl --manual' for more information")
+        raise EarlyExit(
+            EXIT_USAGE,
+            "option --local-port: is badly used here\n"
+            "curl: try 'curl --help' or 'curl --manual' for more information",
+        )
     return low, high
 
 
@@ -178,7 +184,7 @@ def resolve_interface(spec):
     kind, name = None, spec
     for prefix in ('if!', 'host!'):
         if spec.startswith(prefix):
-            kind, name = prefix[:-1], spec[len(prefix):]
+            kind, name = prefix[:-1], spec[len(prefix) :]
     try:
         return str(ipaddress.ip_address(name.strip('[]')))
     except ValueError:
@@ -200,8 +206,8 @@ def _tlv(der, pos):
     length = der[pos + 1]
     start = pos + 2
     if length & 0x80:
-        count = length & 0x7f
-        length = int.from_bytes(der[start:start + count], 'big')
+        count = length & 0x7F
+        length = int.from_bytes(der[start : start + count], 'big')
         start += count
     return start, start + length
 
@@ -211,13 +217,13 @@ def subject_public_key_info(cert_der):
     ``--pinnedpubkey`` hashes -- found by walking the TBSCertificate: an
     optional ``[0]`` version, then serial, signature, issuer, validity,
     subject, and the key."""
-    start, _ = _tlv(cert_der, 0)              # Certificate
-    pos, _ = _tlv(cert_der, start)            # TBSCertificate's content
-    if cert_der[pos] == 0xa0:                 # [0] version
+    start, _ = _tlv(cert_der, 0)  # Certificate
+    pos, _ = _tlv(cert_der, start)  # TBSCertificate's content
+    if cert_der[pos] == 0xA0:  # [0] version
         pos = _tlv(cert_der, pos)[1]
-    for _ in range(5):                        # serial .. subject
+    for _ in range(5):  # serial .. subject
         pos = _tlv(cert_der, pos)[1]
-    return cert_der[pos:_tlv(cert_der, pos)[1]]
+    return cert_der[pos : _tlv(cert_der, pos)[1]]
 
 
 def parse_pins(spec):
@@ -231,7 +237,7 @@ def parse_pins(spec):
             if not part.startswith('sha256//'):
                 raise ValueError('--pinnedpubkey: expected sha256//BASE64[;sha256//BASE64], got %r' % spec)
             try:
-                pins.add(base64.b64decode(part[len('sha256//'):], validate=True))
+                pins.add(base64.b64decode(part[len('sha256//') :], validate=True))
             except ValueError:
                 raise ValueError('--pinnedpubkey: %r is not base64' % part)
         return pins
@@ -298,7 +304,7 @@ class TLSInTLS(object):
 
     def recv_into(self, buffer, size=0):
         data = self.recv(size or len(buffer))
-        buffer[:len(data)] = data
+        buffer[: len(data)] = data
         return len(data)
 
     def makefile(self, mode='rb', buffering=-1, **kwargs):
@@ -453,8 +459,14 @@ class Connector(object):
                 except OSError as exc:
                     sock.close()
                     last = exc
-                    if exc is bind_error and self.ports and (getattr(exc, 'errno', None) in _BIND_ERRNOS
-                                                             or getattr(exc, 'winerror', None) in _BIND_ERRNOS):
+                    if (
+                        exc is bind_error
+                        and self.ports
+                        and (
+                            getattr(exc, 'errno', None) in _BIND_ERRNOS
+                            or getattr(exc, 'winerror', None) in _BIND_ERRNOS
+                        )
+                    ):
                         continue  # the next port of the range
                     break  # the next address
                 if record is not None:
@@ -503,7 +515,8 @@ class Connector(object):
                 base.__init__(self, *args, **kwargs)
                 if socks is not None:
                     self._create_connection = lambda address, timeout=_DEFAULT_TIMEOUT, source=None: (
-                        connector.socks_connection(socks, address, timeout, source))
+                        connector.socks_connection(socks, address, timeout, source)
+                    )
                 else:
                     self._create_connection = connector.create_connection
 
@@ -595,9 +608,13 @@ class ConnectHTTPHandler(urllib.request.HTTPHandler):
         self.connector = connector
 
     def http_open(self, req):
-        klass = self.connector.connection_class(http.client.HTTPConnection, getattr(req, 'tunnel_headers', None),
-                                                getattr(req, 'socks_via', None), getattr(req, 'proxy_tls', None),
-                                                getattr(req, 'proxy_auth', None))
+        klass = self.connector.connection_class(
+            http.client.HTTPConnection,
+            getattr(req, 'tunnel_headers', None),
+            getattr(req, 'socks_via', None),
+            getattr(req, 'proxy_tls', None),
+            getattr(req, 'proxy_auth', None),
+        )
         return self.do_open(klass, req)
 
 
@@ -612,9 +629,13 @@ class ConnectHTTPSHandler(urllib.request.HTTPSHandler):
         self.connector = connector
 
     def https_open(self, req):
-        klass = self.connector.connection_class(http.client.HTTPSConnection, getattr(req, 'tunnel_headers', None),
-                                                getattr(req, 'socks_via', None), getattr(req, 'proxy_tls', None),
-                                                getattr(req, 'proxy_auth', None))
+        klass = self.connector.connection_class(
+            http.client.HTTPSConnection,
+            getattr(req, 'tunnel_headers', None),
+            getattr(req, 'socks_via', None),
+            getattr(req, 'proxy_tls', None),
+            getattr(req, 'proxy_auth', None),
+        )
         kwargs = {'context': self._context}
         if hasattr(self, '_check_hostname'):  # Python < 3.12
             kwargs['check_hostname'] = self._check_hostname

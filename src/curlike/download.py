@@ -11,6 +11,7 @@ means the file is complete, exit 0; a ``-z`` condition curl finds unmet from
 63 and writes nothing; ``-J`` strips directories from the name and will not
 overwrite (exit 23).
 """
+
 import email.utils
 import os
 import re
@@ -36,7 +37,7 @@ def parse_size(value):
     match = _SIZE.match(value or '')
     if not match:
         raise ValueError('--max-filesize: not a size: %r' % value)
-    return int(match.group(1)) * {'': 1, 'k': 1024, 'm': 1024 ** 2, 'g': 1024 ** 3}[match.group(2).lower()]
+    return int(match.group(1)) * {'': 1, 'k': 1024, 'm': 1024**2, 'g': 1024**3}[match.group(2).lower()]
 
 
 def parse_time(value):
@@ -138,8 +139,10 @@ class DownloadArgs(Group):
                     self.body_target = candidate
                     break
             else:
-                raise LocalError(EXIT_WRITE, 'Failure writing output to destination: %s and %s.1-%d exist'
-                                 % (target, target, NO_CLOBBER_TRIES))
+                raise LocalError(
+                    EXIT_WRITE,
+                    'Failure writing output to destination: %s and %s.1-%d exist' % (target, target, NO_CLOBBER_TRIES),
+                )
         if self.continue_at is not None:
             if self.continue_at == '-':
                 current = self.body_target
@@ -153,8 +156,11 @@ class DownloadArgs(Group):
             when = parse_time(self.time_cond[1:] if unmodified else self.time_cond)
             if when is None:
                 if not self.silent:
-                    print('Warning: Illegal date format for -z, --time-cond (and not a file name). '
-                          'Disabling time condition.', file=sys.stderr)
+                    print(
+                        'Warning: Illegal date format for -z, --time-cond (and not a file name). '
+                        'Disabling time condition.',
+                        file=sys.stderr,
+                    )
             else:
                 self._time_value = (unmodified, when)
                 name = 'If-Unmodified-Since' if unmodified else 'If-Modified-Since'
@@ -207,7 +213,9 @@ class DownloadArgs(Group):
                 directory = os.path.dirname(self.body_target or '')
                 target = os.path.join(directory, name) if directory else name
                 if os.path.exists(target):
-                    raise LocalError(EXIT_WRITE, 'Failure writing output to destination: refusing to overwrite %s' % target)
+                    raise LocalError(
+                        EXIT_WRITE, 'Failure writing output to destination: refusing to overwrite %s' % target
+                    )
                 self.body_target = target
         if self.body_target and not os.path.exists(self.body_target):
             self._created = True

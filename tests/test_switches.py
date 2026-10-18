@@ -1,6 +1,7 @@
 """HTTPLIB_PROXY_AUTH_HEADER names the header the proxy credential rides in
 (the fallback, real curl's --proxy-header); HTTPLIB_CURL=0 runs the real curl
 as typed."""
+
 import subprocess
 import sys
 from pathlib import Path
@@ -11,6 +12,7 @@ from curlike import shim as curl
 from httplib import proxy as agent_proxy
 from test_jars_proxy import _Gateway, gateway, origin  # noqa: F401  (fixtures reused)
 from test_proxy_auth import BEARER, _capture_real_curl, _clean_env, _fallback  # noqa: F401
+
 
 def test_fallback_uses_the_configured_header_name(origin, gateway, monkeypatch, capsysbinary):
     monkeypatch.setenv("HTTPLIB_PROXY_AUTH_HEADER", "X-Proxy-Token")
@@ -26,7 +28,13 @@ def test_real_curl_gets_the_configured_header_name(monkeypatch):
     monkeypatch.setenv("HTTPLIB_PROXY_AUTH_HEADER", "X-Proxy-Token")
     calls = _capture_real_curl(monkeypatch)
     assert curl.main(["https://api.example.com/"]) == 0
-    assert calls[-1][1:] == ["--proxy", "http://proxy.example:3128", "--proxy-header", "X-Proxy-Token: " + BEARER, "https://api.example.com/"]
+    assert calls[-1][1:] == [
+        "--proxy",
+        "http://proxy.example:3128",
+        "--proxy-header",
+        "X-Proxy-Token: " + BEARER,
+        "https://api.example.com/",
+    ]
 
 
 def test_net_curl_off_runs_the_real_curl_as_typed(monkeypatch):
@@ -52,4 +60,3 @@ def test_net_curl_off_without_a_real_curl_is_exit_2(monkeypatch, capsysbinary):
     monkeypatch.setattr(curl, "find_real_curl", lambda *a: None)
     assert curl.main(["-s", "https://api.example.com/"]) == 2
     assert capsysbinary.readouterr().err.startswith(b"curl: (2) HTTPLIB_CURL=0 asks for the real curl")
-

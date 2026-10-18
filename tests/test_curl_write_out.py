@@ -5,6 +5,7 @@ variable it cannot report before anything is sent; -q is a no-op there, and
 the real-curl passthrough keeps a leading -q first, the only place curl
 honours it.
 """
+
 import re
 import socket
 
@@ -54,9 +55,12 @@ def test_status_probe_with_dev_null(origin, monkeypatch, capsysbinary):
 
 
 def test_response_variables(origin, monkeypatch, capsysbinary):
-    rc, out = _w(monkeypatch, capsysbinary,
-                 "[%{response_code}|%{http_version}|%{scheme}|%{method}|%{content_type}|%{size_download}|%{num_headers}|%{exitcode}|%{errormsg}]",
-                 origin + "/echo")
+    rc, out = _w(
+        monkeypatch,
+        capsysbinary,
+        "[%{response_code}|%{http_version}|%{scheme}|%{method}|%{content_type}|%{size_download}|%{num_headers}|%{exitcode}|%{errormsg}]",
+        origin + "/echo",
+    )
     body, _, tail = out.out.decode().rpartition("[")
     code, version, scheme, method, ctype, size, nheaders, exitcode, errormsg = tail.rstrip("]").split("|")
     assert rc == 0 and code == "200" and version == "1"  # http.server answers HTTP/1.0
@@ -68,8 +72,11 @@ def test_response_variables(origin, monkeypatch, capsysbinary):
 def test_redirects_url_effective_and_redirect_url(origin, monkeypatch, capsysbinary):
     rc, out = _w(monkeypatch, capsysbinary, "[%{url_effective}|%{num_redirects}|%{redirect_url}]", origin + "/redirect")
     assert rc == 0 and out.out == ("[%s/redirect|0|%s/x]" % (origin, origin)).encode()
-    rc, out = _fallback(monkeypatch, capsysbinary, [
-        "-s", "-L", "-w", "[%{url}|%{url_effective}|%{num_redirects}|%{redirect_url}]", origin + "/redirect"])
+    rc, out = _fallback(
+        monkeypatch,
+        capsysbinary,
+        ["-s", "-L", "-w", "[%{url}|%{url_effective}|%{num_redirects}|%{redirect_url}]", origin + "/redirect"],
+    )
     assert rc == 0 and out.out == ("hello[%s/redirect|%s/x|1|]" % (origin, origin)).encode()
 
 
@@ -90,14 +97,14 @@ def test_headers(origin, monkeypatch, capsysbinary):
     rc, out = _w(monkeypatch, capsysbinary, "[%header{SET-COOKIE}|%header{missing}]", origin + "/setcookie")
     assert rc == 0 and out.out == b"ok[sid=abc; Path=/; HttpOnly; Max-Age=3600|]", "the first value, any case"
     rc, out = _w(monkeypatch, capsysbinary, "%{header_json}", origin + "/setcookie")
-    text = out.out.decode()[len("ok"):]
+    text = out.out.decode()[len("ok") :]
     assert text.startswith('{"') and text.endswith("\n}") and ',\n"' in text
     assert '"set-cookie":["sid=abc; Path=/; HttpOnly; Max-Age=3600","flash=1; Path=/"]' in text
 
 
 def test_times_are_six_decimal_seconds(origin, monkeypatch, capsysbinary):
     rc, out = _w(monkeypatch, capsysbinary, "%{time_starttransfer} %{time_total}", origin + "/x")
-    start, total = out.out.decode()[len("hello"):].split()
+    start, total = out.out.decode()[len("hello") :].split()
     assert re.fullmatch(r"\d+\.\d{6}", start) and re.fullmatch(r"\d+\.\d{6}", total)
     assert float(start) <= float(total)
 
@@ -126,13 +133,20 @@ def test_transport_failure_is_000_and_the_exit_code(monkeypatch, capsysbinary):
     closed.bind(("127.0.0.1", 0))
     port = closed.getsockname()[1]
     closed.close()
-    rc, out = _w(monkeypatch, capsysbinary, "[%{http_code}|%{http_version}|%{exitcode}|%{errormsg}]", "http://127.0.0.1:%d/x" % port)
+    rc, out = _w(
+        monkeypatch,
+        capsysbinary,
+        "[%{http_code}|%{http_version}|%{exitcode}|%{errormsg}]",
+        "http://127.0.0.1:%d/x" % port,
+    )
     assert rc == 7 and out.err == b""
     assert out.out.startswith(b"[000|0|7|Failed to connect")
 
 
 def test_fail_reports_the_status_and_22(origin, monkeypatch, capsysbinary):
-    rc, out = _w(monkeypatch, capsysbinary, "[%{http_code}|%{exitcode}|%{errormsg}|%{size_download}]", "-f", origin + "/404")
+    rc, out = _w(
+        monkeypatch, capsysbinary, "[%{http_code}|%{exitcode}|%{errormsg}|%{size_download}]", "-f", origin + "/404"
+    )
     assert rc == 22 and out.out == b"[404|22|The requested URL returned error: 404|0]"
 
 
@@ -168,11 +182,14 @@ def test_format_from_a_file(origin, tmp_path, monkeypatch, capsysbinary):
     assert rc == 0 and out.out == b"code=200\n"
 
 
-@pytest.mark.parametrize("fmt, named", [
-    ("%{ssl_verify_result}", "%{ssl_verify_result}"),
-    ("%{certs}", "%{certs}"),
-    ("%output{f.txt}x", "%output{f.txt}"),
-])
+@pytest.mark.parametrize(
+    "fmt, named",
+    [
+        ("%{ssl_verify_result}", "%{ssl_verify_result}"),
+        ("%{certs}", "%{certs}"),
+        ("%output{f.txt}x", "%output{f.txt}"),
+    ],
+)
 def test_an_unreportable_variable_is_refused_before_sending(fmt, named, origin, monkeypatch, capsysbinary):
     _Edge.seen = []
     rc, out = _w(monkeypatch, capsysbinary, fmt, origin + "/x")

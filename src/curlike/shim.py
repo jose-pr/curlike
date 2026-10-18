@@ -192,7 +192,7 @@ def maybe_run_system_curl(argv, entry=None):
     # argument (any "-q..." cluster, e.g. -qs); anywhere else it is ignored,
     # so the injected proxy options go after it.
     lead = argv[:1] if argv and (argv[0].startswith('-q') or argv[0] == '--disable') else []
-    result = subprocess.run([curl_path, *lead, *revoke, *extra, *argv[len(lead):]])
+    result = subprocess.run([curl_path, *lead, *revoke, *extra, *argv[len(lead) :]])
     return result.returncode
 
 
@@ -202,8 +202,10 @@ def run_real_curl_as_typed(argv, entry=None):
     be a surprise."""
     curl_path = find_real_curl(entry)
     if not curl_path:
-        print('curl: (2) %s=%s asks for the real curl, which is not on PATH' % (
-            _var(SHIM), HTTPEnv().get(SHIM)), file=sys.stderr)
+        print(
+            'curl: (2) %s=%s asks for the real curl, which is not on PATH' % (_var(SHIM), HTTPEnv().get(SHIM)),
+            file=sys.stderr,
+        )
         return 2
     return subprocess.run([curl_path, *argv]).returncode
 

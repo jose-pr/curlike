@@ -3,6 +3,7 @@ revocation and fails (exit 60, "the revocation status is unknown") when a
 certificate's revocation list is missing or unreachable -- which OpenSSL
 curls never check. The shim adds --ssl-revoke-best-effort for such a curl
 unless told otherwise or the caller chose a revocation flag itself."""
+
 import os
 import shutil
 import ssl
@@ -33,8 +34,9 @@ def test_schannel_gets_best_effort_by_default(monkeypatch):
     assert calls[0][1:] == ["-qs", "--ssl-revoke-best-effort", "https://example.com/"], "after a leading -q"
 
 
-@pytest.mark.parametrize("value,added", [("false", ["--ssl-no-revoke"]), ("true", []), ("BEST-EFFORT",
-                                                                                         ["--ssl-revoke-best-effort"])])
+@pytest.mark.parametrize(
+    "value,added", [("false", ["--ssl-no-revoke"]), ("true", []), ("BEST-EFFORT", ["--ssl-revoke-best-effort"])]
+)
 def test_the_setting(monkeypatch, value, added):
     calls = _capture_real_curl(monkeypatch)
     monkeypatch.setenv("HTTPLIB_CURL_SSL_REVOKE", value)
@@ -106,8 +108,7 @@ def test_a_missing_revocation_list_passes_through_the_shim(pki, monkeypatch):
         argv = ["-sS", "--cacert", str(pki / "ca.pem"), url]
         bare = subprocess.run([_schannel_curl()] + argv, capture_output=True)
         env = {k: v for k, v in os.environ.items() if not k.upper().startswith("HTTPLIB_")}
-        shimmed = subprocess.run([sys.executable, "-m", "curlike"] + argv, capture_output=True,
-                                 env=env)
+        shimmed = subprocess.run([sys.executable, "-m", "curlike"] + argv, capture_output=True, env=env)
     finally:
         httpd.shutdown()
         httpd.server_close()

@@ -3,6 +3,7 @@ answers -- 'ok' (no auth), 'auth' (user agent / s3cret required), 'refuse'
 (reply 5 / 91), 'unreachable' (reply 4), 'drop' (close at once). Hosts are
 resolved by the server for a name request; ``seen`` records each request's
 target as the client sent it."""
+
 import socket
 import struct
 import threading
@@ -23,6 +24,7 @@ def _pipe(a, b):
                 y.shutdown(socket.SHUT_WR)
             except OSError:
                 pass
+
     t = threading.Thread(target=fwd, args=(b, a), daemon=True)
     t.start()
     fwd(a, b)

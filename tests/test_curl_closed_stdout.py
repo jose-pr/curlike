@@ -13,6 +13,7 @@ A failed write leaves Python's stdout unusable, so before this was handled a
 later ``-w``, or the flush at interpreter exit, ended the run with a traceback
 and exit 120.
 """
+
 import io
 import os
 import re
@@ -80,8 +81,9 @@ def _run(command, argv, take=0, keep=False, version=None):
     env.pop("COLUMNS", None)  # with no terminal either, curl wraps its notices at 79
     if version:
         env[compat.var()] = "%d.%d.%d" % version
-    proc = subprocess.Popen([*command, *argv], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, env=env)
+    proc = subprocess.Popen(
+        [*command, *argv], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env
+    )
     try:
         if keep:
             proc.stdout.read()
@@ -114,18 +116,42 @@ CASES = [
     ("-i one byte over", ["-i"], "/n4056", False, ["curl: (23) " + SHORT % (4056, 4055)], SHORT % (4056, 4055)),
     ("-i body 20000", ["-i"], "/n20000", False, ["curl: (23) " + SHORT % (16384, 4054)], SHORT % (16384, 4054)),
     ("-I", ["-I"], "/n5", False, ["curl: Failed writing body"], GENERIC),
-    ("-D -", ["-D", "-"], "/n5", False,
-     ["curl: Failed writing headers to -", "curl: (23) " + REFUSED % 17], REFUSED % 17),
-    ("-D - with -o", ["-D", "-", "-o", os.devnull], "/n5", False,
-     ["curl: Failed writing headers to -", "curl: (23) " + REFUSED % 17], REFUSED % 17),
+    (
+        "-D -",
+        ["-D", "-"],
+        "/n5",
+        False,
+        ["curl: Failed writing headers to -", "curl: (23) " + REFUSED % 17],
+        REFUSED % 17,
+    ),
+    (
+        "-D - with -o",
+        ["-D", "-", "-o", os.devnull],
+        "/n5",
+        False,
+        ["curl: Failed writing headers to -", "curl: (23) " + REFUSED % 17],
+        REFUSED % 17,
+    ),
     ("-o DIR, no body", ["-o", "DIR"], "/n0", True, [], GENERIC),
     ("-o DIR", ["-o", "DIR"], "/n5", True, ["curl: (23) " + REFUSED % 5], REFUSED % 5),
     ("-o DIR, body 20000", ["-o", "DIR"], "/n20000", True, ["curl: (23) " + REFUSED % 16384], REFUSED % 16384),
     ("-i -o DIR", ["-i", "-o", "DIR"], "/n5", True, ["curl: (23) " + REFUSED % 17], REFUSED % 17),
-    ("-D DIR", ["-D", "DIR", "-o", os.devnull], "/n5", True,
-     ["curl: Failed to open DIR", "curl: (23) " + GENERIC], GENERIC),
-    ("-o DIR -D DIR", ["-D", "DIR", "-o", "DIR"], "/n5", True,
-     ["curl: Failed to open DIR", "curl: (23) " + GENERIC], GENERIC),
+    (
+        "-D DIR",
+        ["-D", "DIR", "-o", os.devnull],
+        "/n5",
+        True,
+        ["curl: Failed to open DIR", "curl: (23) " + GENERIC],
+        GENERIC,
+    ),
+    (
+        "-o DIR -D DIR",
+        ["-D", "DIR", "-o", "DIR"],
+        "/n5",
+        True,
+        ["curl: Failed to open DIR", "curl: (23) " + GENERIC],
+        GENERIC,
+    ),
 ]
 IDS = [case[0] for case in CASES]
 
@@ -140,7 +166,7 @@ def test_the_words_are_curls(name, argv, path, keep, printed, errormsg, origin, 
     expected = []
     for line in printed:
         if "DIR" in line:  # a path of any length: wrapped as curl wraps its notices
-            expected += output.notice_lines(line[len("curl: "):].replace("DIR", str(tmp_path)))
+            expected += output.notice_lines(line[len("curl: ") :].replace("DIR", str(tmp_path)))
         else:
             expected.append(line)
     assert (rc, err) == (23, expected + ["[23|%s]" % errormsg])
@@ -158,12 +184,16 @@ def test_the_real_curl_prints_the_same(name, argv, path, keep, printed, errormsg
 MID_TRANSFER = re.compile(r"^curl: \(23\) Failure writing output to destination, passed \d+ returned \d+$")
 
 
-@pytest.mark.parametrize("extra,lines", [
-    ([], 1),
-    (["-w", "[%{exitcode}]"], 1),  # the write-out has nowhere to go
-    (["-w", "%{stderr}[%{exitcode}]"], 2),
-    (["-i"], 1),
-], ids=["body", "write-out to stdout", "write-out to stderr", "-i"])
+@pytest.mark.parametrize(
+    "extra,lines",
+    [
+        ([], 1),
+        (["-w", "[%{exitcode}]"], 1),  # the write-out has nowhere to go
+        (["-w", "%{stderr}[%{exitcode}]"], 2),
+        (["-i"], 1),
+    ],
+    ids=["body", "write-out to stdout", "write-out to stderr", "-i"],
+)
 def test_a_reader_that_leaves_mid_transfer(extra, lines, origin):
     rc, err = _run(FALLBACK, ["-sS", *extra, origin + "/n4194304"], take=16)
     assert rc == 23 and len(err) == lines, err
@@ -225,13 +255,17 @@ def test_what_fits_the_buffer_fails_only_at_the_flush(gone):
     assert not isinstance(sys.stdout, _Gone), "stdout now points at the null device"
 
 
-@pytest.mark.parametrize("held,size,taken", [
-    ([100, 3996], 10, 0),     # exactly full is still held; nothing more fits before it is sent
-    ([100], 16384, 3996),     # the write tops the buffer up, and that is all of it that got in
-    ([100], 3997, 3996),
-    ([], 4096, 0),            # nothing held: a full block is sent at once
-    ([], 16384, 0),
-], ids=["full", "tops up", "one byte over", "a block", "a chunk"])
+@pytest.mark.parametrize(
+    "held,size,taken",
+    [
+        ([100, 3996], 10, 0),  # exactly full is still held; nothing more fits before it is sent
+        ([100], 16384, 3996),  # the write tops the buffer up, and that is all of it that got in
+        ([100], 3997, 3996),
+        ([], 4096, 0),  # nothing held: a full block is sent at once
+        ([], 16384, 0),
+    ],
+    ids=["full", "tops up", "one byte over", "a block", "a chunk"],
+)
 def test_a_write_that_overflows_reports_what_the_buffer_took(held, size, taken, gone):
     gone()
     out = output.Stdout()
@@ -275,12 +309,15 @@ def test_write_out_to_a_dead_stdout_is_skipped(gone):
 PLAIN = "Failure writing output to destination"
 
 
-@pytest.mark.parametrize("version,short,refused,header,dump", [
-    ("8.6.0", PLAIN, PLAIN, "Failed writing header", False),
-    ("8.7.1", SHORT % (10, 4), SHORT % (10, 4294967295), SHORT % (10, 4294967295), False),
-    ("8.8.0", SHORT % (10, 4), REFUSED % 10, REFUSED % 10, False),
-    ("8.9.0", SHORT % (10, 4), REFUSED % 10, REFUSED % 10, True),
-])
+@pytest.mark.parametrize(
+    "version,short,refused,header,dump",
+    [
+        ("8.6.0", PLAIN, PLAIN, "Failed writing header", False),
+        ("8.7.1", SHORT % (10, 4), SHORT % (10, 4294967295), SHORT % (10, 4294967295), False),
+        ("8.8.0", SHORT % (10, 4), REFUSED % 10, REFUSED % 10, False),
+        ("8.9.0", SHORT % (10, 4), REFUSED % 10, REFUSED % 10, True),
+    ],
+)
 def test_older_curls_word_it_differently(version, short, refused, header, dump, monkeypatch):
     monkeypatch.setenv(compat.var(), version)
     assert compat.short_write(10, 4) == short

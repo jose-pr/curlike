@@ -12,6 +12,7 @@ Where curl versions disagree, the fallback answers as the version
 ``HTTPLIB_CURL_COMPAT`` names (``curlike.compat``): the comparison sets it to
 the real curl's own version, so every scenario is exact for any curl.
 """
+
 import base64
 import os
 import re
@@ -138,9 +139,14 @@ def _echo(conn, head):
     if b"/auth" in lines[0] and not _header(head, "Authorization"):
         return _respond(conn, "401 Unauthorized", b"", ['WWW-Authenticate: Basic realm="x"'])
     peer = conn.getpeername()
-    body = b"%s|host=%s|auth=%s|from=%s:%d|x=%s" % (lines[0], (_header(head, "Host") or "").encode(),
-                                                    (_header(head, "Authorization") or "").encode(), peer[0].encode(),
-                                                    _port_note(peer[1]) if b"/port" in lines[0] else 0, _x_headers(head))
+    body = b"%s|host=%s|auth=%s|from=%s:%d|x=%s" % (
+        lines[0],
+        (_header(head, "Host") or "").encode(),
+        (_header(head, "Authorization") or "").encode(),
+        peer[0].encode(),
+        _port_note(peer[1]) if b"/port" in lines[0] else 0,
+        _x_headers(head),
+    )
     if _header(head, "Cookie"):
         body += b"|cookie=" + _header(head, "Cookie").encode()
     _respond(conn, "200 OK", body)
@@ -272,8 +278,9 @@ def _digest_ok(header, method):
 
     ha1, ha2 = md5("agent:proxy:s3cret"), md5("%s:%s" % (method, fields.get("uri", "")))
     if fields.get("qop"):
-        want = md5(":".join([ha1, fields.get("nonce", ""), fields.get("nc", ""), fields.get("cnonce", ""),
-                             fields["qop"], ha2]))
+        want = md5(
+            ":".join([ha1, fields.get("nonce", ""), fields.get("nc", ""), fields.get("cnonce", ""), fields["qop"], ha2])
+        )
     else:
         want = md5("%s:%s:%s" % (ha1, fields.get("nonce", ""), ha2))
     return fields.get("username") == "agent" and fields.get("response") == want
@@ -283,6 +290,7 @@ def _digest_proxy(offer_basic=False):
     """A proxy that wants Digest (MD5, qop=auth) -- or Basic too, when it
     offers both -- on plain requests and on CONNECT, answering each 407 on the
     same connection; once authenticated it tunnels or answers itself."""
+
     def handle(conn, head):
         while True:
             first = head.split(b"\r\n", 1)[0].decode()
@@ -303,6 +311,7 @@ def _digest_proxy(offer_basic=False):
             conn.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
             return _pipe(conn, upstream)
         _respond(conn, "200 OK", b"via-proxy")
+
     return handle
 
 
@@ -310,6 +319,7 @@ def _proxy(require=BASIC, connect_status=None, plain_status=None, drop_connect=F
     """A forward proxy: ``require`` is the Proxy-Authorization it wants (407
     otherwise) in ``header``; ``connect_status`` answers every CONNECT, ``drop_connect``
     closes on it; a CONNECT it accepts is tunnelled to the target."""
+
     def handle(conn, head):
         method, target = head.split(b"\r\n", 1)[0].decode().split(" ")[:2]
         auth = _header(head, header)
@@ -319,7 +329,9 @@ def _proxy(require=BASIC, connect_status=None, plain_status=None, drop_connect=F
             if connect_status:
                 return _respond(conn, connect_status, b"denied")
             if require and auth != require:
-                return _respond(conn, "407 Proxy Authentication Required", b"auth", ['Proxy-Authenticate: Basic realm="x"'])
+                return _respond(
+                    conn, "407 Proxy Authentication Required", b"auth", ['Proxy-Authenticate: Basic realm="x"']
+                )
             host, port = target.rsplit(":", 1)
             try:
                 upstream = socket.create_connection((host, int(port)), timeout=5)
@@ -332,6 +344,7 @@ def _proxy(require=BASIC, connect_status=None, plain_status=None, drop_connect=F
         if require and auth != require:
             return _respond(conn, "407 Proxy Authentication Required", b"auth", ['Proxy-Authenticate: Basic realm="x"'])
         _respond(conn, "200 OK", b"via-proxy")
+
     return handle
 
 
@@ -384,14 +397,30 @@ def _revocation_and_pins(certs, tmp):
     def run(*argv, **kwargs):
         return subprocess.run([openssl, *argv], cwd=str(work), check=True, capture_output=True, **kwargs).stdout
 
-    (work / "ca.cnf").write_text("[ca]\ndefault_ca = d\n[d]\ndatabase = index.txt\ncrlnumber = crlnumber\n"
-                                 "default_md = sha256\ndefault_crl_days = 30\n", encoding="ascii")
+    (work / "ca.cnf").write_text(
+        "[ca]\ndefault_ca = d\n[d]\ndatabase = index.txt\ncrlnumber = crlnumber\n"
+        "default_md = sha256\ndefault_crl_days = 30\n",
+        encoding="ascii",
+    )
     out = {}
-    for name, index in (("crl_clean", ""), ("crl_revoked", "R\t351231000000Z\t260101000000Z\t02\tunknown\t/CN=127.0.0.1\n")):
+    for name, index in (
+        ("crl_clean", ""),
+        ("crl_revoked", "R\t351231000000Z\t260101000000Z\t02\tunknown\t/CN=127.0.0.1\n"),
+    ):
         (work / "index.txt").write_text(index, encoding="ascii")
         (work / "crlnumber").write_text("01\n", encoding="ascii")
-        run("ca", "-gencrl", "-config", "ca.cnf", "-keyfile", str(certs / "ca.key"), "-cert", str(certs / "ca.pem"),
-            "-out", name + ".pem")
+        run(
+            "ca",
+            "-gencrl",
+            "-config",
+            "ca.cnf",
+            "-keyfile",
+            str(certs / "ca.key"),
+            "-cert",
+            str(certs / "ca.pem"),
+            "-out",
+            name + ".pem",
+        )
         out[name] = str(work / (name + ".pem"))
     run("x509", "-in", str(certs / "server.pem"), "-pubkey", "-noout", "-out", "server-pub.pem")
     der = run("pkey", "-pubin", "-in", "server-pub.pem", "-outform", "DER")
@@ -414,21 +443,44 @@ def world(request, tmp_path_factory):
     origin (``None`` without openssl to make its certificate), ``ca`` the
     flags that trust it."""
     servers = _Servers()
-    w = {name: servers.serve(handler) for name, handler in (
-        ("origin", _origin), ("empty", _empty), ("truncated", _truncated), ("not_http", _not_http),
-        ("bad_status", _bad_status), ("reset_mid_body", _reset_mid_body), ("reset_at_once", _reset_at_once),
-        ("bad_chunk", _bad_chunk), ("chunks_cut", _chunks_cut), ("silent", _silent),
-        ("proxy", _proxy()), ("open_proxy", _proxy(require=None)),
-        ("proxy_403", _proxy(connect_status="403 Forbidden")),
-        ("proxy_502", _proxy(connect_status="502 Bad Gateway", plain_status="502 Bad Gateway")),
-        ("proxy_drops", _proxy(drop_connect=True)),
-        ("digest_proxy", _digest_proxy()), ("digest_or_basic_proxy", _digest_proxy(offer_basic=True)),
-        ("echo", _echo), ("header_proxy", _header_proxy), ("stalls", _stalls), ("longer_than_said", _longer_than_said), ("sixty_k", _sixty_k),
-        ("no_colon", _no_colon), ("plain_at_once", _plain_at_once), ("range_ignored", _range_ignored), ("range_416", _range_416),
-        ("bad_gzip", _bad_gzip), ("unknown_encoding", _unknown_encoding), ("many_headers", _many_headers),
-        ("huge_header", _huge_header), ("big_body", _big_body), ("closes_on_upload", _closes_on_upload),
-        ("token_proxy", _proxy(header="X-Proxy-Token")),
-    )}
+    w = {
+        name: servers.serve(handler)
+        for name, handler in (
+            ("origin", _origin),
+            ("empty", _empty),
+            ("truncated", _truncated),
+            ("not_http", _not_http),
+            ("bad_status", _bad_status),
+            ("reset_mid_body", _reset_mid_body),
+            ("reset_at_once", _reset_at_once),
+            ("bad_chunk", _bad_chunk),
+            ("chunks_cut", _chunks_cut),
+            ("silent", _silent),
+            ("proxy", _proxy()),
+            ("open_proxy", _proxy(require=None)),
+            ("proxy_403", _proxy(connect_status="403 Forbidden")),
+            ("proxy_502", _proxy(connect_status="502 Bad Gateway", plain_status="502 Bad Gateway")),
+            ("proxy_drops", _proxy(drop_connect=True)),
+            ("digest_proxy", _digest_proxy()),
+            ("digest_or_basic_proxy", _digest_proxy(offer_basic=True)),
+            ("echo", _echo),
+            ("header_proxy", _header_proxy),
+            ("stalls", _stalls),
+            ("longer_than_said", _longer_than_said),
+            ("sixty_k", _sixty_k),
+            ("no_colon", _no_colon),
+            ("plain_at_once", _plain_at_once),
+            ("range_ignored", _range_ignored),
+            ("range_416", _range_416),
+            ("bad_gzip", _bad_gzip),
+            ("unknown_encoding", _unknown_encoding),
+            ("many_headers", _many_headers),
+            ("huge_header", _huge_header),
+            ("big_body", _big_body),
+            ("closes_on_upload", _closes_on_upload),
+            ("token_proxy", _proxy(header="X-Proxy-Token")),
+        )
+    }
     w["dead"] = "http://127.0.0.1:%d" % _closed_port()
     socks = {mode: FakeSocks(mode) for mode in ("ok", "auth", "refuse", "unreachable", "drop")}
     w.update({"socks_" + mode: "127.0.0.1:%d" % s.port for mode, s in socks.items()})
@@ -458,8 +510,15 @@ def world(request, tmp_path_factory):
         w["https_proxy_mutual"] = servers.serve(_proxy(require=None), tls=mutual).replace("http://", "https://")
     else:
         w["tls"], w["ca"], w["certs"], w["tls_mutual"] = None, [], None, None
-        w.update(crl_revoked=None, crl_clean=None, pin=None, pubkey=None, https_proxy=None, https_proxy_auth=None,
-                 https_proxy_mutual=None)
+        w.update(
+            crl_revoked=None,
+            crl_clean=None,
+            pin=None,
+            pubkey=None,
+            https_proxy=None,
+            https_proxy_auth=None,
+            https_proxy_mutual=None,
+        )
     yield w
     servers.close()
 
@@ -495,6 +554,7 @@ def _run(argv, env, real):
     global EMPTY_PATH
     if EMPTY_PATH is None:
         import tempfile
+
         EMPTY_PATH = tempfile.mkdtemp()
     e = {k: v for k, v in os.environ.items() if not _PROXY_VARS.match(k)}
     e.update(env)
@@ -506,8 +566,9 @@ def _run(argv, env, real):
         # certificate the CA signs would fail as "revocation status unknown".
         argv = ["--ssl-no-revoke"] + argv
     try:
-        p = subprocess.run([sys.executable, "-m", "curlike"] + argv, capture_output=True, env=e, timeout=30,
-                           stdin=subprocess.DEVNULL)
+        p = subprocess.run(
+            [sys.executable, "-m", "curlike"] + argv, capture_output=True, env=e, timeout=30, stdin=subprocess.DEVNULL
+        )
     except subprocess.TimeoutExpired:
         return "timeout", None, b"", b""
     m = re.search(rb"curl: \((\d+)\)", p.stderr)
@@ -545,16 +606,24 @@ SCENARIOS = [
     ("bad chunk", lambda w: [w["bad_chunk"] + "/"], {}, False, {}),
     ("chunks cut", lambda w: [w["chunks_cut"] + "/"], {}, False, {}),
     ("-w on empty reply", lambda w: ["-w", "[%{http_code} %{exitcode}]", w["empty"] + "/"], {}, False, {}),
-    ("-w on truncated", lambda w: ["-w", "[%{http_code} %{exitcode} %{size_download}]", w["truncated"] + "/"],
-     {}, False, {}),
+    (
+        "-w on truncated",
+        lambda w: ["-w", "[%{http_code} %{exitcode} %{size_download}]", w["truncated"] + "/"],
+        {},
+        False,
+        {},
+    ),
     # Every HTTP-relevant code in curl's exit-code list.
     ("8: header line without a colon", lambda w: [w["no_colon"] + "/"], {}, False, {}),
-    ("33: resume, range ignored", lambda w: ["-C", "-", "-o", _copy(w, "partial"), w["range_ignored"] + "/"],
-     {}, False, {}),
-    ("36: resume past the end", lambda w: ["-C", "-", "-o", _copy(w, "partial"), w["range_416"] + "/"],
-     {}, False, {}),
-    ("55: upload reset", lambda w: ["-T", str(w["tmp"] / "upload.bin"), w["closes_on_upload"] + "/up"],
-     {}, False, {}),
+    (
+        "33: resume, range ignored",
+        lambda w: ["-C", "-", "-o", _copy(w, "partial"), w["range_ignored"] + "/"],
+        {},
+        False,
+        {},
+    ),
+    ("36: resume past the end", lambda w: ["-C", "-", "-o", _copy(w, "partial"), w["range_416"] + "/"], {}, False, {}),
+    ("55: upload reset", lambda w: ["-T", str(w["tmp"] / "upload.bin"), w["closes_on_upload"] + "/up"], {}, False, {}),
     ("61: bad gzip --compressed", lambda w: ["--compressed", w["bad_gzip"] + "/"], {}, False, {}),
     ("61: bad gzip without --compressed", lambda w: [w["bad_gzip"] + "/"], {}, False, {}),
     ("unknown encoding --compressed", lambda w: ["--compressed", w["unknown_encoding"] + "/"], {}, False, {}),
@@ -569,45 +638,117 @@ SCENARIOS = [
     ("-0 upload", lambda w: ["-0", "-T", str(w["tmp"] / "partial"), w["echo"] + "/up"], {}, False, {}),
     # SOCKS: the proxy carries the connection; the request is the origin's.
     ("socks5, an address", lambda w: ["-x", "socks5://" + w["socks_ok"], w["echo"] + "/s"], {}, False, {}),
-    ("socks5, a name resolved here", lambda w: ["-x", "socks5://" + w["socks_ok"], "--resolve",
-                                                "named.test:%s:127.0.0.1" % w["echo"].rsplit(":", 1)[1],
-                                                w["echo"].replace("127.0.0.1", "named.test") + "/s"], {}, False, {}),
-    ("socks5h, the proxy resolves", lambda w: ["-x", "socks5h://" + w["socks_ok"], _localhost(w, "echo")],
-     {}, False, {}),
+    (
+        "socks5, a name resolved here",
+        lambda w: [
+            "-x",
+            "socks5://" + w["socks_ok"],
+            "--resolve",
+            "named.test:%s:127.0.0.1" % w["echo"].rsplit(":", 1)[1],
+            w["echo"].replace("127.0.0.1", "named.test") + "/s",
+        ],
+        {},
+        False,
+        {},
+    ),
+    (
+        "socks5h, the proxy resolves",
+        lambda w: ["-x", "socks5h://" + w["socks_ok"], _localhost(w, "echo")],
+        {},
+        False,
+        {},
+    ),
     ("socks4", lambda w: ["-x", "socks4://" + w["socks_ok"], _localhost(w, "echo")], {}, False, {}),
     ("socks4a", lambda w: ["-x", "socks4a://" + w["socks_ok"], _localhost(w, "echo")], {}, False, {}),
     ("socks:// is socks4", lambda w: ["-x", "socks://" + w["socks_ok"], w["echo"] + "/s"], {}, False, {}),
     ("--socks5", lambda w: ["--socks5", w["socks_ok"], w["echo"] + "/s"], {}, False, {}),
     ("--socks5-hostname", lambda w: ["--socks5-hostname", w["socks_ok"], _localhost(w, "echo")], {}, False, {}),
     ("--socks4", lambda w: ["--socks4", w["socks_ok"], w["echo"] + "/s"], {}, False, {}),
-    ("--socks4a overrides -x", lambda w: ["-x", P(w, "dead"), "--socks4a", w["socks_ok"], _localhost(w, "echo")],
-     {}, False, {}),
-    ("socks5 credentials in the URL", lambda w: ["-x", "socks5h://agent:s3cret@" + w["socks_auth"],
-                                                 _localhost(w, "echo")], {}, False, {}),
-    ("socks5 credentials from -U", lambda w: ["-x", "socks5h://" + w["socks_auth"], "-U", "agent:s3cret",
-                                              _localhost(w, "echo")], {}, False, {}),
-    ("--socks5-basic", lambda w: ["--socks5-basic", "-x", "socks5h://agent:s3cret@" + w["socks_auth"],
-                                  w["echo"] + "/s"], {}, False, {}),
-    ("socks5 wrong password", lambda w: ["-x", "socks5h://agent:bad@" + w["socks_auth"], w["echo"] + "/s"],
-     {}, False, {}),
+    (
+        "--socks4a overrides -x",
+        lambda w: ["-x", P(w, "dead"), "--socks4a", w["socks_ok"], _localhost(w, "echo")],
+        {},
+        False,
+        {},
+    ),
+    (
+        "socks5 credentials in the URL",
+        lambda w: ["-x", "socks5h://agent:s3cret@" + w["socks_auth"], _localhost(w, "echo")],
+        {},
+        False,
+        {},
+    ),
+    (
+        "socks5 credentials from -U",
+        lambda w: ["-x", "socks5h://" + w["socks_auth"], "-U", "agent:s3cret", _localhost(w, "echo")],
+        {},
+        False,
+        {},
+    ),
+    (
+        "--socks5-basic",
+        lambda w: ["--socks5-basic", "-x", "socks5h://agent:s3cret@" + w["socks_auth"], w["echo"] + "/s"],
+        {},
+        False,
+        {},
+    ),
+    (
+        "socks5 wrong password",
+        lambda w: ["-x", "socks5h://agent:bad@" + w["socks_auth"], w["echo"] + "/s"],
+        {},
+        False,
+        {},
+    ),
     ("socks5 no credentials", lambda w: ["-x", "socks5h://" + w["socks_auth"], w["echo"] + "/s"], {}, False, {}),
     ("socks5 refused", lambda w: ["-x", "socks5h://" + w["socks_refuse"], w["echo"] + "/s"], {}, False, {}),
     ("socks5 unreachable", lambda w: ["-x", "socks5h://" + w["socks_unreachable"], w["echo"] + "/s"], {}, False, {}),
     ("socks4 refused", lambda w: ["-x", "socks4://" + w["socks_refuse"], w["echo"] + "/s"], {}, False, {}),
     ("socks dropped", lambda w: ["-x", "socks5h://" + w["socks_drop"], w["echo"] + "/s"], {}, False, {}),
-    ("socks proxy refused", lambda w: ["-x", "socks5h://" + w["dead"].split("//")[1], w["echo"] + "/s"],
-     {}, False, {}),
-    ("socks proxy not resolvable", lambda w: ["-x", "socks5h://nonexistent.invalid:1080", w["echo"] + "/s"],
-     {}, False, {}),
-    ("socks5, target not resolvable here", lambda w: ["-x", "socks5://" + w["socks_ok"], "http://nonexistent.invalid/"],
-     {}, False, {}),
-    ("socks5h, target not resolvable there", lambda w: ["-x", "socks5h://" + w["socks_ok"],
-                                                        "http://nonexistent.invalid/"], {}, False, {}),
-    ("socks -w", lambda w: ["-x", "socks5h://" + w["socks_refuse"], "-w", "[%{http_code} %{exitcode}]",
-                            w["echo"] + "/s"], {}, False, {}),
+    ("socks proxy refused", lambda w: ["-x", "socks5h://" + w["dead"].split("//")[1], w["echo"] + "/s"], {}, False, {}),
+    (
+        "socks proxy not resolvable",
+        lambda w: ["-x", "socks5h://nonexistent.invalid:1080", w["echo"] + "/s"],
+        {},
+        False,
+        {},
+    ),
+    (
+        "socks5, target not resolvable here",
+        lambda w: ["-x", "socks5://" + w["socks_ok"], "http://nonexistent.invalid/"],
+        {},
+        False,
+        {},
+    ),
+    (
+        "socks5h, target not resolvable there",
+        lambda w: ["-x", "socks5h://" + w["socks_ok"], "http://nonexistent.invalid/"],
+        {},
+        False,
+        {},
+    ),
+    (
+        "socks -w",
+        lambda w: ["-x", "socks5h://" + w["socks_refuse"], "-w", "[%{http_code} %{exitcode}]", w["echo"] + "/s"],
+        {},
+        False,
+        {},
+    ),
     ("socks5h to https", lambda w: w["ca"] + ["-x", "socks5h://" + w["socks_ok"], S(w)], {}, True, {}),
-    ("--preproxy to an HTTP proxy", lambda w: ["--preproxy", "socks5h://" + w["socks_ok"], "-x",
-                                              P(w, "header_proxy"), "--proxy-header", "X-P: 1", X], {}, False, {}),
+    (
+        "--preproxy to an HTTP proxy",
+        lambda w: [
+            "--preproxy",
+            "socks5h://" + w["socks_ok"],
+            "-x",
+            P(w, "header_proxy"),
+            "--proxy-header",
+            "X-P: 1",
+            X,
+        ],
+        {},
+        False,
+        {},
+    ),
     ("--preproxy alone", lambda w: ["--preproxy", "socks5h://" + w["socks_ok"], w["echo"] + "/s"], {}, False, {}),
     ("agent proxy is SOCKS", lambda w: [_localhost(w, "echo")], {"HTTPLIB_PROXY": "@socks5h"}, False, {}),
     # HTTPS proxies: TLS to the proxy, verified by the --proxy-* TLS options.
@@ -615,60 +756,179 @@ SCENARIOS = [
     ("https proxy, --proxy-insecure", lambda w: ["-x", w["https_proxy"], "--proxy-insecure", X], {}, True, {}),
     ("https proxy, untrusted", lambda w: ["-x", w["https_proxy"], X], {}, True, {}),
     ("https proxy, --cacert is not for it", lambda w: w["ca"] + ["-x", w["https_proxy"], X], {}, True, {}),
-    ("https proxy, name mismatch", lambda w: ["-x", w["https_proxy"].replace("127.0.0.1", "localhost"),
-                                             "--proxy-cacert", _ca(w), X], {}, True, {}),
-    ("https proxy, https target", lambda w: w["ca"] + ["-x", w["https_proxy"], "--proxy-cacert", _ca(w), S(w)],
-     {}, True, {}),
+    (
+        "https proxy, name mismatch",
+        lambda w: ["-x", w["https_proxy"].replace("127.0.0.1", "localhost"), "--proxy-cacert", _ca(w), X],
+        {},
+        True,
+        {},
+    ),
+    (
+        "https proxy, https target",
+        lambda w: w["ca"] + ["-x", w["https_proxy"], "--proxy-cacert", _ca(w), S(w)],
+        {},
+        True,
+        {},
+    ),
     # Ubuntu's curl 8.5 reports 35 ("SSL_ERROR_SYSCALL") for this, newer ones 60;
     # where it changed was not measured.
-    ("https proxy, https target untrusted", lambda w: ["-x", w["https_proxy"], "--proxy-cacert", _ca(w), S(w)],
-     {}, True, {35: 60}),
+    (
+        "https proxy, https target untrusted",
+        lambda w: ["-x", w["https_proxy"], "--proxy-cacert", _ca(w), S(w)],
+        {},
+        True,
+        {35: 60},
+    ),
     ("https proxy, -k is not for it", lambda w: ["-k", "-x", w["https_proxy"], S(w)], {}, True, {}),
     ("https proxy, both insecure", lambda w: ["-k", "--proxy-insecure", "-x", w["https_proxy"], S(w)], {}, True, {}),
-    ("https proxy, -p http target", lambda w: ["-p", "-x", w["https_proxy"], "--proxy-cacert", _ca(w),
-                                               w["echo"] + "/t"], {}, True, {}),
-    ("https proxy, credentials", lambda w: ["-x", w["https_proxy_auth"], "--proxy-cacert", _ca(w), "-U",
-                                            "agent:s3cret", X], {}, True, {}),
+    (
+        "https proxy, -p http target",
+        lambda w: ["-p", "-x", w["https_proxy"], "--proxy-cacert", _ca(w), w["echo"] + "/t"],
+        {},
+        True,
+        {},
+    ),
+    (
+        "https proxy, credentials",
+        lambda w: ["-x", w["https_proxy_auth"], "--proxy-cacert", _ca(w), "-U", "agent:s3cret", X],
+        {},
+        True,
+        {},
+    ),
     ("https proxy, 407", lambda w: ["-x", w["https_proxy_auth"], "--proxy-cacert", _ca(w), X], {}, True, {}),
-    ("https proxy, CONNECT with credentials", lambda w: w["ca"] + ["-x", w["https_proxy_auth"], "--proxy-cacert",
-                                                                   _ca(w), "-U", "agent:s3cret", S(w)], {}, True, {}),
-    ("https proxy, CONNECT 407", lambda w: w["ca"] + ["-x", w["https_proxy_auth"], "--proxy-cacert", _ca(w), S(w)],
-     {}, True, {}),
-    ("--proxy-pinnedpubkey match", lambda w: ["-x", w["https_proxy"], "--proxy-insecure", "--proxy-pinnedpubkey",
-                                              w["pin"], X], {}, True, {}),
-    ("--proxy-pinnedpubkey mismatch", lambda w: ["-x", w["https_proxy"], "--proxy-insecure", "--proxy-pinnedpubkey",
-                                                 "sha256//" + "A" * 43 + "=", X], {}, True, {}),
-    ("--proxy-crlfile revoked", lambda w: ["-x", w["https_proxy"], "--proxy-cacert", _ca(w), "--proxy-crlfile",
-                                           w["crl_revoked"], X], {}, True, {}),
-    ("--proxy-cacert missing", lambda w: ["-x", w["https_proxy"], "--proxy-cacert", str(w["tmp"] / "none.pem"), X],
-     {}, True, {}),
+    (
+        "https proxy, CONNECT with credentials",
+        lambda w: w["ca"] + ["-x", w["https_proxy_auth"], "--proxy-cacert", _ca(w), "-U", "agent:s3cret", S(w)],
+        {},
+        True,
+        {},
+    ),
+    (
+        "https proxy, CONNECT 407",
+        lambda w: w["ca"] + ["-x", w["https_proxy_auth"], "--proxy-cacert", _ca(w), S(w)],
+        {},
+        True,
+        {},
+    ),
+    (
+        "--proxy-pinnedpubkey match",
+        lambda w: ["-x", w["https_proxy"], "--proxy-insecure", "--proxy-pinnedpubkey", w["pin"], X],
+        {},
+        True,
+        {},
+    ),
+    (
+        "--proxy-pinnedpubkey mismatch",
+        lambda w: ["-x", w["https_proxy"], "--proxy-insecure", "--proxy-pinnedpubkey", "sha256//" + "A" * 43 + "=", X],
+        {},
+        True,
+        {},
+    ),
+    (
+        "--proxy-crlfile revoked",
+        lambda w: ["-x", w["https_proxy"], "--proxy-cacert", _ca(w), "--proxy-crlfile", w["crl_revoked"], X],
+        {},
+        True,
+        {},
+    ),
+    (
+        "--proxy-cacert missing",
+        lambda w: ["-x", w["https_proxy"], "--proxy-cacert", str(w["tmp"] / "none.pem"), X],
+        {},
+        True,
+        {},
+    ),
     ("--proxy-tlsv1", lambda w: ["-x", w["https_proxy"], "--proxy-cacert", _ca(w), "--proxy-tlsv1", X], {}, True, {}),
-    ("--proxy-cert", lambda w: ["-x", w["https_proxy_mutual"], "--proxy-cacert", _ca(w), "--proxy-cert",
-                                str(w["certs"] / "client.pem"), "--proxy-key", str(w["certs"] / "client.key"), X],
-     {}, True, {}),
-    ("https proxy wants a client certificate", lambda w: ["-x", w["https_proxy_mutual"], "--proxy-cacert", _ca(w), X],
-     {}, True, {55: 56}),  # the same race as "client certificate required"
+    (
+        "--proxy-cert",
+        lambda w: [
+            "-x",
+            w["https_proxy_mutual"],
+            "--proxy-cacert",
+            _ca(w),
+            "--proxy-cert",
+            str(w["certs"] / "client.pem"),
+            "--proxy-key",
+            str(w["certs"] / "client.key"),
+            X,
+        ],
+        {},
+        True,
+        {},
+    ),
+    (
+        "https proxy wants a client certificate",
+        lambda w: ["-x", w["https_proxy_mutual"], "--proxy-cacert", _ca(w), X],
+        {},
+        True,
+        {55: 56},
+    ),  # the same race as "client certificate required"
     ("agent proxy over https", lambda w: ["--proxy-insecure", X], {"HTTPLIB_PROXY": "@https_proxy"}, True, {}),
     # Proxy Digest: nothing up front, the 407 answered once.
-    ("--proxy-digest", lambda w: ["-x", P(w, "digest_proxy"), "--proxy-digest", "-U", "agent:s3cret", X],
-     {}, False, {}),
-    ("--proxy-digest wrong password", lambda w: ["-x", P(w, "digest_proxy"), "--proxy-digest", "-U", "agent:bad", X],
-     {}, False, {}),
-    ("--proxy-digest credentials in the URL", lambda w: ["-x", P(w, "digest_proxy").replace("//", "//agent:s3cret@"),
-                                                         "--proxy-digest", X], {}, False, {}),
-    ("--proxy-anyauth picks Digest", lambda w: ["-x", P(w, "digest_or_basic_proxy"), "--proxy-anyauth", "-U",
-                                                "agent:s3cret", X], {}, False, {}),
-    ("--proxy-anyauth, Digest only", lambda w: ["-x", P(w, "digest_proxy"), "--proxy-anyauth", "-U", "agent:s3cret",
-                                                X], {}, False, {}),
+    (
+        "--proxy-digest",
+        lambda w: ["-x", P(w, "digest_proxy"), "--proxy-digest", "-U", "agent:s3cret", X],
+        {},
+        False,
+        {},
+    ),
+    (
+        "--proxy-digest wrong password",
+        lambda w: ["-x", P(w, "digest_proxy"), "--proxy-digest", "-U", "agent:bad", X],
+        {},
+        False,
+        {},
+    ),
+    (
+        "--proxy-digest credentials in the URL",
+        lambda w: ["-x", P(w, "digest_proxy").replace("//", "//agent:s3cret@"), "--proxy-digest", X],
+        {},
+        False,
+        {},
+    ),
+    (
+        "--proxy-anyauth picks Digest",
+        lambda w: ["-x", P(w, "digest_or_basic_proxy"), "--proxy-anyauth", "-U", "agent:s3cret", X],
+        {},
+        False,
+        {},
+    ),
+    (
+        "--proxy-anyauth, Digest only",
+        lambda w: ["-x", P(w, "digest_proxy"), "--proxy-anyauth", "-U", "agent:s3cret", X],
+        {},
+        False,
+        {},
+    ),
     ("Basic to a Digest proxy", lambda w: ["-x", P(w, "digest_proxy"), "-U", "agent:s3cret", X], {}, False, {}),
-    ("--proxy-digest over CONNECT", lambda w: w["ca"] + ["-x", P(w, "digest_proxy"), "--proxy-digest", "-U",
-                                                         "agent:s3cret", S(w)], {}, True, {}),
-    ("--proxy-digest over CONNECT, wrong password", lambda w: w["ca"] + ["-x", P(w, "digest_proxy"), "--proxy-digest",
-                                                                         "-U", "agent:bad", S(w)], {}, True, {}),
-    ("--proxy-anyauth over CONNECT", lambda w: w["ca"] + ["-x", P(w, "digest_or_basic_proxy"), "--proxy-anyauth",
-                                                          "-U", "agent:s3cret", S(w)], {}, True, {}),
-    ("--proxy-digest with -p", lambda w: ["-p", "-x", P(w, "digest_proxy"), "--proxy-digest", "-U", "agent:s3cret",
-                                          w["echo"] + "/d"], {}, False, {}),
+    (
+        "--proxy-digest over CONNECT",
+        lambda w: w["ca"] + ["-x", P(w, "digest_proxy"), "--proxy-digest", "-U", "agent:s3cret", S(w)],
+        {},
+        True,
+        {},
+    ),
+    (
+        "--proxy-digest over CONNECT, wrong password",
+        lambda w: w["ca"] + ["-x", P(w, "digest_proxy"), "--proxy-digest", "-U", "agent:bad", S(w)],
+        {},
+        True,
+        {},
+    ),
+    (
+        "--proxy-anyauth over CONNECT",
+        lambda w: w["ca"] + ["-x", P(w, "digest_or_basic_proxy"), "--proxy-anyauth", "-U", "agent:s3cret", S(w)],
+        {},
+        True,
+        {},
+    ),
+    (
+        "--proxy-digest with -p",
+        lambda w: ["-p", "-x", P(w, "digest_proxy"), "--proxy-digest", "-U", "agent:s3cret", w["echo"] + "/d"],
+        {},
+        False,
+        {},
+    ),
     # --proto, --proto-redir, --proto-default.
     ("--proto =https on http", lambda w: ["--proto", "=https", w["echo"] + "/p"], {}, False, {}),
     ("--proto -all,https", lambda w: ["--proto", "-all,https", w["echo"] + "/p"], {}, False, {}),
@@ -678,15 +938,29 @@ SCENARIOS = [
     ("--proto unknown name", lambda w: ["--proto", "=bogus", w["echo"] + "/p"], {}, False, {}),
     ("--proto =https -w", lambda w: ["--proto", "=https", "-w", "[%{exitcode}]", w["echo"] + "/p"], {}, False, {}),
     ("--proto-redir =https", lambda w: ["-L", "--proto-redir", "=https", w["origin"] + "/to-http"], {}, False, {}),
-    ("--proto-redir -all,http", lambda w: ["-L", "--proto-redir", "-all,http", w["origin"] + "/to-http"],
-     {}, False, {}),
-    ("--proto =http blocks the https hop", lambda w: ["-L", "--proto", "=https", w["origin"] + "/to-http"],
-     {}, False, {}),
+    (
+        "--proto-redir -all,http",
+        lambda w: ["-L", "--proto-redir", "-all,http", w["origin"] + "/to-http"],
+        {},
+        False,
+        {},
+    ),
+    (
+        "--proto =http blocks the https hop",
+        lambda w: ["-L", "--proto", "=https", w["origin"] + "/to-http"],
+        {},
+        False,
+        {},
+    ),
     ("--proto-default http", lambda w: ["--proto-default", "http", w["echo"].split("//")[1] + "/x"], {}, False, {}),
-    ("--proto-default unknown", lambda w: ["--proto-default", "bogus", w["echo"].split("//")[1] + "/x"],
-     {}, False, {}),
-    ("--proto-default https to a plain port", lambda w: ["--proto-default", "https", "-m", "10",
-                                                         w["plain_at_once"].split("//")[1] + "/x"], {}, False, {}),
+    ("--proto-default unknown", lambda w: ["--proto-default", "bogus", w["echo"].split("//")[1] + "/x"], {}, False, {}),
+    (
+        "--proto-default https to a plain port",
+        lambda w: ["--proto-default", "https", "-m", "10", w["plain_at_once"].split("//")[1] + "/x"],
+        {},
+        False,
+        {},
+    ),
     # Dot segments: resolved as curl does, unless --path-as-is.
     ("dot segments /a/../b", lambda w: [w["echo"] + "/a/../b"], {}, False, {}),
     ("dot segments /a/./b/.", lambda w: [w["echo"] + "/a/./b/."], {}, False, {}),
@@ -695,34 +969,98 @@ SCENARIOS = [
     ("--path-as-is", lambda w: ["--path-as-is", w["echo"] + "/a/../b"], {}, False, {}),
     # -j and the no-ops.
     ("-j drops session cookies", lambda w: ["-j", "-b", _write(w, "jar.txt", _JAR), w["echo"] + "/c"], {}, False, {}),
-    ("-b, curl's matching rules", lambda w: ["-b", _write(w, "rules.txt", _RULES_JAR), w["echo"] + "/adminx/y"],
-     {}, False, {}),
+    (
+        "-b, curl's matching rules",
+        lambda w: ["-b", _write(w, "rules.txt", _RULES_JAR), w["echo"] + "/adminx/y"],
+        {},
+        False,
+        {},
+    ),
     ("-b keeps session cookies", lambda w: ["-b", _write(w, "jar.txt", _JAR), w["echo"] + "/c"], {}, False, {}),
-    ("no-ops", lambda w: ["--fail-early", "--expect100-timeout", "1", "--tcp-fastopen", "--false-start",
-                          "--happy-eyeballs-timeout-ms", "100", "--random-file", "x", "--egd-file", "x",
-                          w["echo"] + "/n"], {}, False, {}),
+    (
+        "no-ops",
+        lambda w: [
+            "--fail-early",
+            "--expect100-timeout",
+            "1",
+            "--tcp-fastopen",
+            "--false-start",
+            "--happy-eyeballs-timeout-ms",
+            "100",
+            "--random-file",
+            "x",
+            "--egd-file",
+            "x",
+            w["echo"] + "/n",
+        ],
+        {},
+        False,
+        {},
+    ),
     ("-i through a CONNECT", lambda w: w["ca"] + ["-i", "-x", P(w, "open_proxy"), S(w)], {}, True, {}),
-    ("-i --suppress-connect-headers", lambda w: w["ca"] + ["-i", "--suppress-connect-headers", "-x",
-                                                            P(w, "open_proxy"), S(w)], {}, True, {}),
+    (
+        "-i --suppress-connect-headers",
+        lambda w: w["ca"] + ["-i", "--suppress-connect-headers", "-x", P(w, "open_proxy"), S(w)],
+        {},
+        True,
+        {},
+    ),
     # --proxy-header: to the proxy only -- the plain request to it, or the CONNECT.
-    ("--proxy-header, plain proxying", lambda w: ["-x", P(w, "header_proxy"), "--proxy-header", "X-P: 1", "-H",
-                                                  "X-O: 2", X], {}, False, {}),
-    ("--proxy-header on the CONNECT (-p)", lambda w: ["-p", "-x", P(w, "header_proxy"), "--proxy-header", "X-P: 1",
-                                                      "-H", "X-O: 2", w["echo"] + "/x"], {}, False, {}),
-    ("--proxy-header never reaches the origin", lambda w: w["ca"] + ["-x", P(w, "header_proxy"), "--proxy-header",
-                                                                     "X-Proxy-Token: t", S(w)], {}, True, {}),
-    ("--proxy-header, bypassed host", lambda w: ["-x", P(w, "header_proxy"), "--noproxy", "127.0.0.1",
-                                                 "--proxy-header", "X-P: 1", w["echo"] + "/b"], {}, False, {}),
-    ("--proxy-header empty and from a file", lambda w: ["-x", P(w, "header_proxy"), "--proxy-header", "X-E;",
-                                                        "--proxy-header", "@" + _write(w, "ph.txt", "X-F: 3\n"), X],
-     {}, False, {}),
+    (
+        "--proxy-header, plain proxying",
+        lambda w: ["-x", P(w, "header_proxy"), "--proxy-header", "X-P: 1", "-H", "X-O: 2", X],
+        {},
+        False,
+        {},
+    ),
+    (
+        "--proxy-header on the CONNECT (-p)",
+        lambda w: ["-p", "-x", P(w, "header_proxy"), "--proxy-header", "X-P: 1", "-H", "X-O: 2", w["echo"] + "/x"],
+        {},
+        False,
+        {},
+    ),
+    (
+        "--proxy-header never reaches the origin",
+        lambda w: w["ca"] + ["-x", P(w, "header_proxy"), "--proxy-header", "X-Proxy-Token: t", S(w)],
+        {},
+        True,
+        {},
+    ),
+    (
+        "--proxy-header, bypassed host",
+        lambda w: ["-x", P(w, "header_proxy"), "--noproxy", "127.0.0.1", "--proxy-header", "X-P: 1", w["echo"] + "/b"],
+        {},
+        False,
+        {},
+    ),
+    (
+        "--proxy-header empty and from a file",
+        lambda w: [
+            "-x",
+            P(w, "header_proxy"),
+            "--proxy-header",
+            "X-E;",
+            "--proxy-header",
+            "@" + _write(w, "ph.txt", "X-F: 3\n"),
+            X,
+        ],
+        {},
+        False,
+        {},
+    ),
     ("--proxy-basic", lambda w: ["-x", P(w, "proxy"), "--proxy-basic", "-U", "agent:s3cret", X], {}, False, {}),
     ("--request-target *", lambda w: ["--request-target", "*", "-X", "OPTIONS", w["echo"] + "/x"], {}, False, {}),
     ("--request-target", lambda w: ["--request-target", "/other?q=1", w["echo"] + "/x"], {}, False, {}),
     ("-p tunnels http", lambda w: ["-p", "-x", P(w, "open_proxy"), w["echo"] + "/tunnelled"], {}, False, {}),
     ("-p, proxy refuses", lambda w: ["-p", "-x", P(w, "proxy_403"), w["echo"] + "/t"], {}, False, {}),
-    ("-p with a credential", lambda w: ["-p", "-x", P(w, "proxy"), "-U", "agent:s3cret", w["echo"] + "/t"],
-     {}, False, {}),
+    (
+        "-p with a credential",
+        lambda w: ["-p", "-x", P(w, "proxy"), "-U", "agent:s3cret", w["echo"] + "/t"],
+        {},
+        False,
+        {},
+    ),
     ("--anyauth", lambda w: ["--anyauth", "-u", "a:b", w["echo"] + "/auth"], {}, False, {}),
     ("--anyauth, no challenge", lambda w: ["--anyauth", "-u", "a:b", w["echo"] + "/open"], {}, False, {}),
     ("--interface IP", lambda w: ["--interface", "127.0.0.1", w["echo"] + "/i"], {}, False, {}),
@@ -737,8 +1075,13 @@ SCENARIOS = [
     ("--crlfile missing", lambda w: w["ca"] + ["--crlfile", str(w["tmp"] / "missing.crl"), S(w)], {}, True, {}),
     ("--pinnedpubkey match", lambda w: w["ca"] + ["--pinnedpubkey", w["pin"], S(w)], {}, True, {}),
     ("--pinnedpubkey file", lambda w: w["ca"] + ["--pinnedpubkey", w["pubkey"], S(w)], {}, True, {}),
-    ("--pinnedpubkey mismatch", lambda w: w["ca"] + ["--pinnedpubkey", "sha256//" + "A" * 43 + "=", S(w)],
-     {}, True, {}),
+    (
+        "--pinnedpubkey mismatch",
+        lambda w: w["ca"] + ["--pinnedpubkey", "sha256//" + "A" * 43 + "=", S(w)],
+        {},
+        True,
+        {},
+    ),
     ("--pinnedpubkey with -k", lambda w: ["-k", "--pinnedpubkey", "sha256//" + "A" * 43 + "=", S(w)], {}, True, {}),
     # The URL and local files.
     ("malformed URL", lambda w: ["-w", "[%{exitcode}]", "http://[::1/"], {}, False, {}),
@@ -757,26 +1100,41 @@ SCENARIOS = [
     ("-F @missing", lambda w: ["-F", "f=@" + str(w["tmp"] / "missing.bin"), w["origin"] + "/"], {}, False, {}),
     ("-H @missing", lambda w: ["-H", "@" + str(w["tmp"] / "missing.txt"), w["origin"] + "/"], {}, False, {}),
     ("--cacert missing", lambda w: ["--cacert", str(w["tmp"] / "missing.pem"), S(w)], {}, True, {}),
-    ("--netrc-file missing", lambda w: ["--netrc-file", str(w["tmp"] / "missing.netrc"), w["origin"] + "/"],
-     {}, False, {}),
+    (
+        "--netrc-file missing",
+        lambda w: ["--netrc-file", str(w["tmp"] / "missing.netrc"), w["origin"] + "/"],
+        {},
+        False,
+        {},
+    ),
     ("-w @missing", lambda w: ["-w", "@" + str(w["tmp"] / "missing.txt"), w["origin"] + "/"], {}, False, {}),
     # TLS.
     ("TLS trusted", lambda w: w["ca"] + [S(w)], {}, True, {}),
     ("TLS untrusted", lambda w: [S(w)], {}, True, {}),
     ("TLS -k", lambda w: ["-k", S(w)], {}, True, {}),
-    ("35: TLS to a plain-HTTP port", lambda w: ["-m", "10", w["plain_at_once"].replace("http://", "https://") + "/"],
-     {}, False, {}),
+    (
+        "35: TLS to a plain-HTTP port",
+        lambda w: ["-m", "10", w["plain_at_once"].replace("http://", "https://") + "/"],
+        {},
+        False,
+        {},
+    ),
     ("60: name does not match", lambda w: w["ca"] + [S(w).replace("127.0.0.1", "localhost")], {}, True, {}),
     ("77: --cacert not a bundle", lambda w: ["--cacert", str(w["tmp"] / "garbage.pem"), S(w)], {}, True, {}),
     # The server's "certificate required" alert races curl's first write: 56
     # when curl reads it, 55 when the reset reaches its send first.
     ("client certificate required", lambda w: w["ca"] + [w["tls_mutual"] + "/"], {}, True, {55: 56}),
-    ("client certificate given", lambda w: w["ca"] + ["--cert", str(w["certs"] / "client.pem"), "--key",
-                                                     str(w["certs"] / "client.key"), w["tls_mutual"] + "/"], {}, True, {}),
+    (
+        "client certificate given",
+        lambda w: w["ca"]
+        + ["--cert", str(w["certs"] / "client.pem"), "--key", str(w["certs"] / "client.key"), w["tls_mutual"] + "/"],
+        {},
+        True,
+        {},
+    ),
     # A proxy, plain http: its answer is the response.
     ("proxy credential", lambda w: ["-x", P(w, "proxy"), "-U", "agent:s3cret", X], {}, False, {}),
-    ("proxy credential in its URL", lambda w: ["-x", P(w, "proxy").replace("//", "//agent:s3cret@"), X],
-     {}, False, {}),
+    ("proxy credential in its URL", lambda w: ["-x", P(w, "proxy").replace("//", "//agent:s3cret@"), X], {}, False, {}),
     ("proxy 407", lambda w: ["-x", P(w, "proxy"), X], {}, False, {}),
     ("proxy 407 -f", lambda w: ["-f", "-x", P(w, "proxy"), X], {}, False, {}),
     ("proxy wrong credential", lambda w: ["-x", P(w, "proxy"), "-U", "agent:bad", X], {}, False, {}),
@@ -791,50 +1149,101 @@ SCENARIOS = [
     ("CONNECT proxy not resolvable", lambda w: ["-x", "http://nonexistent.invalid:3128", S(w)], {}, False, {}),
     ("CONNECT 407", lambda w: w["ca"] + ["-x", P(w, "proxy"), S(w)], {}, False, {}),
     ("CONNECT 407 -f", lambda w: w["ca"] + ["-f", "-x", P(w, "proxy"), S(w)], {}, False, {}),
-    ("CONNECT 407 -w", lambda w: w["ca"] + ["-w", "[%{http_code} %{exitcode}]", "-x", P(w, "proxy"), S(w)],
-     {}, False, {}),
-    ("CONNECT wrong credential", lambda w: w["ca"] + ["-x", P(w, "proxy"), "-U", "agent:bad", S(w)],
-     {}, False, {}),
+    (
+        "CONNECT 407 -w",
+        lambda w: w["ca"] + ["-w", "[%{http_code} %{exitcode}]", "-x", P(w, "proxy"), S(w)],
+        {},
+        False,
+        {},
+    ),
+    ("CONNECT wrong credential", lambda w: w["ca"] + ["-x", P(w, "proxy"), "-U", "agent:bad", S(w)], {}, False, {}),
     ("CONNECT 403", lambda w: w["ca"] + ["-x", P(w, "proxy_403"), S(w)], {}, False, {}),
     ("CONNECT 403 -f", lambda w: w["ca"] + ["-f", "-x", P(w, "proxy_403"), S(w)], {}, False, {}),
     ("CONNECT 502", lambda w: w["ca"] + ["-x", P(w, "proxy_502"), S(w)], {}, False, {}),
     ("CONNECT dropped", lambda w: w["ca"] + ["-x", P(w, "proxy_drops"), S(w)], {}, False, {}),
     ("CONNECT empty reply", lambda w: w["ca"] + ["-x", P(w, "empty"), S(w)], {}, False, {}),
-    ("CONNECT target unreachable", lambda w: ["-x", P(w, "open_proxy"), "https://127.0.0.1:%d/" % _closed_port()],
-     {}, False, {}),
+    (
+        "CONNECT target unreachable",
+        lambda w: ["-x", P(w, "open_proxy"), "https://127.0.0.1:%d/" % _closed_port()],
+        {},
+        False,
+        {},
+    ),
     ("CONNECT tunnelled", lambda w: w["ca"] + ["-x", P(w, "proxy"), "-U", "agent:s3cret", S(w)], {}, True, {}),
     ("CONNECT tunnelled, untrusted", lambda w: ["-x", P(w, "proxy"), "-U", "agent:s3cret", S(w)], {}, True, {}),
     # The agent proxy (HTTPLIB_PROXY): the shim hands it to real curl as
     # --proxy / --proxy-header; the fallback applies it itself.
     ("agent proxy", lambda w: [X], {"HTTPLIB_PROXY": "@proxy", "HTTPLIB_PROXY_AUTH": BASIC}, False, {}),
-    ("agent proxy, wrong credential", lambda w: [X], {"HTTPLIB_PROXY": "@proxy", "HTTPLIB_PROXY_AUTH": "Basic eA=="},
-     False, {}),
-    ("agent proxy, wrong credential -f", lambda w: ["-f", X],
-     {"HTTPLIB_PROXY": "@proxy", "HTTPLIB_PROXY_AUTH": "Basic eA=="}, False, {}),
+    (
+        "agent proxy, wrong credential",
+        lambda w: [X],
+        {"HTTPLIB_PROXY": "@proxy", "HTTPLIB_PROXY_AUTH": "Basic eA=="},
+        False,
+        {},
+    ),
+    (
+        "agent proxy, wrong credential -f",
+        lambda w: ["-f", X],
+        {"HTTPLIB_PROXY": "@proxy", "HTTPLIB_PROXY_AUTH": "Basic eA=="},
+        False,
+        {},
+    ),
     ("agent proxy, no credential", lambda w: [X], {"HTTPLIB_PROXY": "@proxy"}, False, {}),
     ("agent proxy, userinfo credential", lambda w: [X], {"HTTPLIB_PROXY": "@proxy+userinfo"}, False, {}),
     ("agent proxy refused", lambda w: [X], {"HTTPLIB_PROXY": "@dead"}, False, {}),
     ("agent proxy not resolvable", lambda w: [X], {"HTTPLIB_PROXY": "http://nonexistent.invalid:3128"}, False, {}),
     ("agent proxy malformed", lambda w: [X], {"HTTPLIB_PROXY": "not a url"}, False, {}),
-    ("agent proxy CONNECT 407", lambda w: w["ca"] + [S(w)], {"HTTPLIB_PROXY": "@proxy", "HTTPLIB_PROXY_AUTH": "Basic eA=="},
-     False, {}),
-    ("agent proxy CONNECT 407 -f", lambda w: w["ca"] + ["-f", S(w)],
-     {"HTTPLIB_PROXY": "@proxy", "HTTPLIB_PROXY_AUTH": "Basic eA=="}, False, {}),
-    ("agent proxy bearer CONNECT 407", lambda w: w["ca"] + [S(w)], {"HTTPLIB_PROXY": "@proxy", "HTTPLIB_PROXY_AUTH": "Bearer t"},
-     False, {}),
-    ("agent proxy CONNECT tunnelled", lambda w: w["ca"] + [S(w)], {"HTTPLIB_PROXY": "@proxy", "HTTPLIB_PROXY_AUTH": BASIC},
-     True, {}),
+    (
+        "agent proxy CONNECT 407",
+        lambda w: w["ca"] + [S(w)],
+        {"HTTPLIB_PROXY": "@proxy", "HTTPLIB_PROXY_AUTH": "Basic eA=="},
+        False,
+        {},
+    ),
+    (
+        "agent proxy CONNECT 407 -f",
+        lambda w: w["ca"] + ["-f", S(w)],
+        {"HTTPLIB_PROXY": "@proxy", "HTTPLIB_PROXY_AUTH": "Basic eA=="},
+        False,
+        {},
+    ),
+    (
+        "agent proxy bearer CONNECT 407",
+        lambda w: w["ca"] + [S(w)],
+        {"HTTPLIB_PROXY": "@proxy", "HTTPLIB_PROXY_AUTH": "Bearer t"},
+        False,
+        {},
+    ),
+    (
+        "agent proxy CONNECT tunnelled",
+        lambda w: w["ca"] + [S(w)],
+        {"HTTPLIB_PROXY": "@proxy", "HTTPLIB_PROXY_AUTH": BASIC},
+        True,
+        {},
+    ),
     # HTTPLIB_PROXY_AUTH_HEADER: the credential in a header of that name, to
     # the proxy only -- on the CONNECT for https, never through the tunnel.
-    ("agent proxy custom header", lambda w: [X],
-     {"HTTPLIB_PROXY": "@token_proxy", "HTTPLIB_PROXY_AUTH": BASIC, "HTTPLIB_PROXY_AUTH_HEADER": "X-Proxy-Token"},
-     False, {}),
-    ("agent proxy custom header CONNECT", lambda w: w["ca"] + [S(w)],
-     {"HTTPLIB_PROXY": "@token_proxy", "HTTPLIB_PROXY_AUTH": BASIC, "HTTPLIB_PROXY_AUTH_HEADER": "X-Proxy-Token"},
-     True, {}),
-    ("agent proxy custom header never reaches the origin", lambda w: w["ca"] + [S(w)],
-     {"HTTPLIB_PROXY": "@open_proxy", "HTTPLIB_PROXY_AUTH": BASIC, "HTTPLIB_PROXY_AUTH_HEADER": "X-Proxy-Token"},
-     True, {}),
+    (
+        "agent proxy custom header",
+        lambda w: [X],
+        {"HTTPLIB_PROXY": "@token_proxy", "HTTPLIB_PROXY_AUTH": BASIC, "HTTPLIB_PROXY_AUTH_HEADER": "X-Proxy-Token"},
+        False,
+        {},
+    ),
+    (
+        "agent proxy custom header CONNECT",
+        lambda w: w["ca"] + [S(w)],
+        {"HTTPLIB_PROXY": "@token_proxy", "HTTPLIB_PROXY_AUTH": BASIC, "HTTPLIB_PROXY_AUTH_HEADER": "X-Proxy-Token"},
+        True,
+        {},
+    ),
+    (
+        "agent proxy custom header never reaches the origin",
+        lambda w: w["ca"] + [S(w)],
+        {"HTTPLIB_PROXY": "@open_proxy", "HTTPLIB_PROXY_AUTH": BASIC, "HTTPLIB_PROXY_AUTH_HEADER": "X-Proxy-Token"},
+        True,
+        {},
+    ),
     ("agent proxy dropped CONNECT", lambda w: w["ca"] + [S(w)], {"HTTPLIB_PROXY": "@proxy_drops"}, False, {}),
 ]
 
@@ -846,15 +1255,16 @@ def _ca(world):
 #: A Secure cookie (sent to 127.0.0.1 over http: a secure context), a leading-dot
 #: domain (never covers an IP address), a path that is a prefix of the URL's
 #: but not a path-match (/admin vs /adminx), and an HttpOnly row.
-_RULES_JAR = ("127.0.0.1\tFALSE\t/\tTRUE\t4102444800\tsecure\t1\n"
-              ".0.0.1\tTRUE\t/\tFALSE\t4102444800\tdotted\t2\n"
-              "127.0.0.1\tFALSE\t/admin\tFALSE\t4102444800\tadmin\t3\n"
-              "127.0.0.1\tFALSE\t/adminx\tFALSE\t4102444800\tadminx\t4\n"
-              "#HttpOnly_127.0.0.1\tFALSE\t/\tFALSE\t4102444800\thidden\t5\n")
+_RULES_JAR = (
+    "127.0.0.1\tFALSE\t/\tTRUE\t4102444800\tsecure\t1\n"
+    ".0.0.1\tTRUE\t/\tFALSE\t4102444800\tdotted\t2\n"
+    "127.0.0.1\tFALSE\t/admin\tFALSE\t4102444800\tadmin\t3\n"
+    "127.0.0.1\tFALSE\t/adminx\tFALSE\t4102444800\tadminx\t4\n"
+    "#HttpOnly_127.0.0.1\tFALSE\t/\tFALSE\t4102444800\thidden\t5\n"
+)
 
 
-_JAR = ("127.0.0.1\tFALSE\t/\tFALSE\t0\tsession\tyes\n"
-        "127.0.0.1\tFALSE\t/\tFALSE\t4102444800\tlasting\tyes\n")
+_JAR = "127.0.0.1\tFALSE\t/\tFALSE\t0\tsession\tyes\n" "127.0.0.1\tFALSE\t/\tFALSE\t4102444800\tlasting\tyes\n"
 
 
 def _localhost(world, name):
@@ -873,6 +1283,7 @@ def _copy(world, name):
     """A fresh copy of a prepared file (each run may rewrite it)."""
     import shutil
     import uuid
+
     target = world["tmp"] / ("%s-%s" % (name, uuid.uuid4().hex[:8]))
     shutil.copy(str(world["tmp"] / name), str(target))
     return str(target)
@@ -918,6 +1329,7 @@ def test_the_fallback_answers_as_curl_does(world, name, argv, env, tls, allowed)
         pytest.skip("no openssl to make the TLS origin's certificate with")
     if SCHANNEL and name in SCHANNEL_OWN:
         pytest.skip("Schannel's own behaviour: %s" % SCHANNEL_OWN[name])
+
     def command():
         # Built once per side: a scenario may prepare a file each run rewrites.
         args = ["-sS"] + argv(world)
@@ -932,9 +1344,19 @@ def test_the_fallback_answers_as_curl_does(world, name, argv, env, tls, allowed)
         out = out.replace(b"%d]" % code, b"%d]" % allowed[code])
         code = allowed[code]
         err_code = code if err_code is not None else None
-    assert (fallback[0], fallback[1], fallback[2]) == (code, err_code, out), (
-        "%s\n real curl: rc=%s stderr=%r stdout=%r\n fallback:  rc=%s stderr=%r stdout=%r"
-        % (name, real[0], real[3][:300], real[2][:120], fallback[0], fallback[3][-300:], fallback[2][:120]))
+    assert (fallback[0], fallback[1], fallback[2]) == (
+        code,
+        err_code,
+        out,
+    ), "%s\n real curl: rc=%s stderr=%r stdout=%r\n fallback:  rc=%s stderr=%r stdout=%r" % (
+        name,
+        real[0],
+        real[3][:300],
+        real[2][:120],
+        fallback[0],
+        fallback[3][-300:],
+        fallback[2][:120],
+    )
 
 
 def test_a_url_glob_is_refused_not_sent_as_typed(world):
@@ -950,22 +1372,50 @@ def test_a_url_glob_is_refused_not_sent_as_typed(world):
 # -w's timings, addresses and %{json}: times differ run to run, so they are
 # checked for curl's format and order; everything else is compared exactly.
 # --------------------------------------------------------------------------- #
-_TIMES = ("time_namelookup", "time_connect", "time_appconnect", "time_pretransfer", "time_posttransfer",
-          "time_starttransfer", "time_total", "time_redirect")
-_SAME = ("exitcode", "http_code", "remote_ip", "remote_port", "local_ip", "num_connects", "size_header",
-         "size_delivered", "http_connect", "proxy_used", "num_retries", "url.host", "url.port", "url.path",
-         "urle.path", "referer", "conn_id", "xfer_id")
+_TIMES = (
+    "time_namelookup",
+    "time_connect",
+    "time_appconnect",
+    "time_pretransfer",
+    "time_posttransfer",
+    "time_starttransfer",
+    "time_total",
+    "time_redirect",
+)
+_SAME = (
+    "exitcode",
+    "http_code",
+    "remote_ip",
+    "remote_port",
+    "local_ip",
+    "num_connects",
+    "size_header",
+    "size_delivered",
+    "http_connect",
+    "proxy_used",
+    "num_retries",
+    "url.host",
+    "url.port",
+    "url.path",
+    "urle.path",
+    "referer",
+    "conn_id",
+    "xfer_id",
+)
 _NUMBERS = ("local_port", "speed_download", "speed_upload", "size_request")
 
 
-@pytest.mark.parametrize("name,argv,tls", [
-    ("http", lambda w: [w["origin"] + "/t"], False),
-    ("https", lambda w: w["ca"] + [S(w)], True),
-    ("through a proxy", lambda w: ["-x", P(w, "open_proxy"), X], False),
-    ("https through a CONNECT", lambda w: w["ca"] + ["-x", P(w, "open_proxy"), S(w)], True),
-    ("refused", lambda w: [P(w, "dead") + "/"], False),
-    ("with a referer", lambda w: ["-e", "http://ref.example/", w["origin"] + "/t"], False),
-])
+@pytest.mark.parametrize(
+    "name,argv,tls",
+    [
+        ("http", lambda w: [w["origin"] + "/t"], False),
+        ("https", lambda w: w["ca"] + [S(w)], True),
+        ("through a proxy", lambda w: ["-x", P(w, "open_proxy"), X], False),
+        ("https through a CONNECT", lambda w: w["ca"] + ["-x", P(w, "open_proxy"), S(w)], True),
+        ("refused", lambda w: [P(w, "dead") + "/"], False),
+        ("with a referer", lambda w: ["-e", "http://ref.example/", w["origin"] + "/t"], False),
+    ],
+)
 def test_write_out_timings_and_addresses(world, name, argv, tls):
     if tls and not world["tls"]:
         pytest.skip("no openssl to make the TLS origin's certificate with")
@@ -984,8 +1434,10 @@ def test_write_out_timings_and_addresses(world, name, argv, tls):
         for key in _NUMBERS:
             assert re.match(r"^-?\d+$", side[key]), (key, side[key])
         if side["exitcode"] == "0":
-            chain = [float(side[k]) for k in ("time_namelookup", "time_connect", "time_pretransfer",
-                                              "time_starttransfer", "time_total")]
+            chain = [
+                float(side[k])
+                for k in ("time_namelookup", "time_connect", "time_pretransfer", "time_starttransfer", "time_total")
+            ]
             assert chain == sorted(chain), (name, chain)
     assert {k: fallback[k] for k in _SAME} == {k: real[k] for k in _SAME}, name
 
@@ -997,7 +1449,16 @@ def test_write_out_json_has_curls_keys(world):
     real = json.loads(_run(args, {}, real=True)[2])
     fallback = json.loads(_run(args, {}, real=False)[2])
     assert set(real) <= set(fallback), sorted(set(real) - set(fallback))
-    for key in ("http_code", "exitcode", "remote_ip", "remote_port", "num_connects", "size_download", "url.host",
-                "scheme", "method"):
+    for key in (
+        "http_code",
+        "exitcode",
+        "remote_ip",
+        "remote_port",
+        "num_connects",
+        "size_download",
+        "url.host",
+        "scheme",
+        "method",
+    ):
         assert fallback[key] == real[key], (key, fallback[key], real[key])
     assert type(fallback["time_total"]) is float and type(fallback["local_port"]) is int

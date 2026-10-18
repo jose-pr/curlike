@@ -1,5 +1,6 @@
 """Connection options: proxy steering, timeouts, redirects, ``--retry``, and
 the protocol no-ops (``-g``, ``--http1.1``, ``-q``)."""
+
 import errno
 import socket
 from typing import List, Optional
@@ -38,6 +39,7 @@ def parse_rate(spec, flag):
     if not m:
         raise ValueError('%s: expected a number with an optional k/m/g suffix, got %r' % (flag, spec))
     return float(m.group(1)) * 1024 ** ' kmg'.index(m.group(2).lower() or ' ')
+
 
 #: curl's longest backoff between retries, in seconds.
 MAX_RETRY_SLEEP = 600
@@ -323,8 +325,12 @@ class ConnectionArgs(Group):
 
     def effective_proxy(self):
         """The proxy URL: a --socks* flag (they override -x), else -x."""
-        for kind, value in (('socks5h', self.socks5_hostname), ('socks5', self.socks5), ('socks4a', self.socks4a),
-                            ('socks4', self.socks4)):
+        for kind, value in (
+            ('socks5h', self.socks5_hostname),
+            ('socks5', self.socks5),
+            ('socks4a', self.socks4a),
+            ('socks4', self.socks4),
+        ):
             if value:
                 return value if '://' in value else '%s://%s' % (kind, value)
         return self.proxy
@@ -363,8 +369,10 @@ class ConnectionArgs(Group):
         (either alone implies the other's default: 1 B/s, 30 s), or ``None``."""
         if self.speed_limit is None and self.speed_time is None:
             return None
-        return (self.speed_limit if self.speed_limit is not None else 1,
-                self.speed_time if self.speed_time is not None else 30)
+        return (
+            self.speed_limit if self.speed_limit is not None else 1,
+            self.speed_time if self.speed_time is not None else 30,
+        )
 
     def connection_handlers(self, context):
         """urllib handlers replacing the TCP ones (--unix-socket), or []."""

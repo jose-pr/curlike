@@ -1,5 +1,6 @@
 """Output options: where the body and headers go, how loud the fallback is,
 and what an HTTP error status does (``-f`` / ``--fail-with-body``)."""
+
 import contextlib
 import os
 import sys
@@ -120,8 +121,8 @@ def notice_lines(text, prefix='curl: '):
             cut -= 1
         if not cut:
             cut = width - 1
-        lines.append(prefix + text[:cut + 1])
-        text = text[cut + 1:]
+        lines.append(prefix + text[: cut + 1])
+        text = text[cut + 1 :]
     lines.append(prefix + text)
     return lines
 
@@ -133,7 +134,7 @@ def header_lines(header_bytes):
 
 def body_chunks(content):
     """The body as curl's write callback gets it."""
-    return [content[i:i + WRITE_CHUNK] for i in range(0, len(content), WRITE_CHUNK)]
+    return [content[i : i + WRITE_CHUNK] for i in range(0, len(content), WRITE_CHUNK)]
 
 
 class OutputArgs(Group):
