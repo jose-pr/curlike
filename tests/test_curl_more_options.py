@@ -258,7 +258,12 @@ def test_address_family(files, tmp_path, monkeypatch, capsysbinary):
 def test_unix_socket(tmp_path, monkeypatch, capsysbinary):
     import socketserver
 
-    path = str(tmp_path / "s.sock")
+    # sun_path holds ~104 bytes: pytest's temp directory is too long on macOS.
+    import shutil
+    import tempfile
+
+    sock_dir = tempfile.mkdtemp(dir="/tmp" if os.name == "posix" else None)
+    path = os.path.join(sock_dir, "s.sock")
 
     class _UnixHTTP(socketserver.UnixStreamServer):
         def get_request(self):
@@ -273,6 +278,7 @@ def test_unix_socket(tmp_path, monkeypatch, capsysbinary):
     finally:
         server.shutdown()
         server.server_close()
+        shutil.rmtree(sock_dir, ignore_errors=True)
 
 
 @pytest.mark.skipif(hasattr(socket, "AF_UNIX"), reason="AF_UNIX available")

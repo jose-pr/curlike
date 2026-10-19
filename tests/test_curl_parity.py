@@ -659,7 +659,13 @@ SCENARIOS = [
         {},
     ),
     ("36: resume past the end", lambda w: ["-C", "-", "-o", _copy(w, "partial"), w["range_416"] + "/"], {}, False, {}),
-    ("55: upload reset", lambda w: ["-T", str(w["tmp"] / "upload.bin"), w["closes_on_upload"] + "/up"], {}, False, {}),
+    (
+        "55: upload reset",
+        lambda w: ["-T", str(w["tmp"] / "upload.bin"), w["closes_on_upload"] + "/up"],
+        {},
+        False,
+        {56: 55},  # the reset and the broken pipe arrive in the OS's order
+    ),
     ("61: bad gzip --compressed", lambda w: ["--compressed", w["bad_gzip"] + "/"], {}, False, {}),
     ("61: bad gzip without --compressed", lambda w: [w["bad_gzip"] + "/"], {}, False, {}),
     ("unknown encoding --compressed", lambda w: ["--compressed", w["unknown_encoding"] + "/"], {}, False, {}),
@@ -1376,9 +1382,12 @@ def test_the_fallback_answers_as_curl_does(world, name, argv, env, tls, allowed)
     environment = _env(world, env)
     real = _run(command(), environment, real=True)
     fallback = _run(command(), environment, real=False)
+    for side, answer in (("real curl", real), ("fallback", fallback)):
+        if answer[0] == "timeout":
+            pytest.fail("%s: %s hung past the harness timeout" % (name, side))
     code, err_code, out = real[:3]
-    if code in allowed:
-        # A known difference (a race between two outcomes): what the fallback answers instead.
+    if code in allowed and fallback[0] != code:
+        # A race between two outcomes: the fallback may land on the other one.
         out = out.replace(b"%d]" % code, b"%d]" % allowed[code])
         code = allowed[code]
         err_code = code if err_code is not None else None

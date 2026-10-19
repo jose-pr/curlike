@@ -30,3 +30,18 @@ def _clean_settings(monkeypatch):
         return real(selector=selector, **kwargs)
 
     monkeypatch.setattr(sslcontext, "system_context", system_context)
+
+
+def pytest_report_header(config):
+    """The curl the parity tests compare with: its version line, so a CI log shows it."""
+    from curlike import realcurl
+
+    path = realcurl.find_real_curl()
+    if not path:
+        return "real curl: none (the parity tests skip)"
+    version, schannel = realcurl.describe(path)
+    return "real curl: %s %s%s" % (
+        path,
+        "%d.%d.%d" % version if version else "unknown version",
+        " (Schannel)" if schannel else "",
+    )
