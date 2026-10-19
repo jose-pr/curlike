@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "curlike"
-version = "0.1.0.dev4"
+version = "0.1.0.dev5"
 authors = [{ name = "jose-pr", email = "jose-pr@coqui.dev" }]
 description = "A drop-in curl: the real curl when there is one, with syshttp's proxy and hooks applied, else a curl-compatible command over the standard library"
 readme = "README.md"
@@ -27,8 +27,10 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    # 0.1.0.dev1: proxy.configured_proxy_url() and plan(url=...), the system proxy.
-    "syshttp>=0.1.0.dev3,<0.2",
+    # 0.1.0.dev6: proxy.proxy_map() and configured_proxy(), routing on proxylib 2.
+    "syshttp>=0.1.0.dev6,<0.2",
+    # Proxy entries, lookup, Probed and BypassRules (routing.py).
+    "proxylib>=2.0,<3",
     # duho.Meta replaced duho.NS in 0.7.
     "duho>=0.7.4,<0.8",
 ]

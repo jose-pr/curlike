@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Routing comes from syshttp 0.1.0.dev6's `proxy.proxy_map()` over
+  proxylib 2 (now a direct dependency): the `*_PROXY` variables are read per
+  scheme, `NO_PROXY` takes CIDR entries, `HTTP_PROXY_AUTH` goes to the
+  machine's proxy (a `*_PROXY` variable's or the system's) and
+  `<P>_PROXY_AUTH` to `<P>_PROXY` only. Of a list the first proxy that
+  answers is used; a lone proxy is not probed. The exit-7 message is
+  `no proxy of the list is reachable: host:port, ...`.
+
 - The package stands alone. It was previously the dotagents `net` overlay's
   curl shim (`bin/curl.py`) and its fallback (`httplib.cli`,
   `python -m httplib`). The fallback is now `curlike` (`curlike.main`), and
