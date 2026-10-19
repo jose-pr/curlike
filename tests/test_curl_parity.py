@@ -231,6 +231,16 @@ def _range_ignored(conn, head):
     _respond(conn, "200 OK", b"0123456789")
 
 
+def _range_from(start):
+    """A 206 whose Content-Range starts at ``start`` (None: no Content-Range)."""
+
+    def handle(conn, head):
+        extra = [] if start is None else ["Content-Range: bytes %d-9/10" % start]
+        _respond(conn, "206 Partial Content", b"0123456789"[start or 0 :], extra)
+
+    return handle
+
+
 def _range_416(conn, head):
     _respond(conn, "416 Range Not Satisfiable", extra=["Content-Range: bytes */10"])
 
@@ -249,6 +259,30 @@ def _many_headers(conn, head):
 
 def _huge_header(conn, head):
     _respond(conn, "200 OK", b"ok", ["X-Huge: " + "a" * 200000])
+
+
+def _headers_over_300k(conn, head):
+    _respond(conn, "200 OK", b"ok", ["X-%d: %s" % (i, "a" * 1000) for i in range(310)])
+
+
+def _headers_over_5000(conn, head):
+    _respond(conn, "200 OK", b"ok", ["X-%d: 1" % i for i in range(5000)])
+
+
+def _content_length_conflict(conn, head):
+    conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nContent-Length: 3\r\n\r\nok")
+
+
+def _content_length_negative(conn, head):
+    conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: -2\r\n\r\nok")
+
+
+def _content_length_list(conn, head):
+    conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2, 2\r\n\r\nok")
+
+
+def _nul_in_header(conn, head):
+    conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nX-A: a\x00b\r\n\r\nok")
 
 
 def _big_body(conn, head):
@@ -510,11 +544,20 @@ def world(request, tmp_path_factory):
             ("plain_at_once", _plain_at_once),
             ("range_ignored", _range_ignored),
             ("range_416", _range_416),
+            ("range_from_3", _range_from(3)),
+            ("range_from_5", _range_from(5)),
+            ("range_none", _range_from(None)),
             ("bad_gzip", _bad_gzip),
             ("unknown_encoding", _unknown_encoding),
             ("many_headers", _many_headers),
             ("huge_header", _huge_header),
             ("big_body", _big_body),
+            ("headers_300k", _headers_over_300k),
+            ("headers_5000", _headers_over_5000),
+            ("cl_conflict", _content_length_conflict),
+            ("cl_negative", _content_length_negative),
+            ("cl_list", _content_length_list),
+            ("nul_header", _nul_in_header),
             ("closes_on_upload", _closes_on_upload),
             ("token_proxy", _proxy(header="X-Proxy-Token")),
         )
@@ -587,6 +630,8 @@ REAL_VERSION = _real_version()
 #: be at least this new for the comparison to mean anything.
 SINCE = {
     "100: a 200 KB header": (8, 6, 0),
+    "56: headers over 300 KB": (8, 21, 0),
+    "100: over 5000 headers": (8, 21, 0),
     "socks proxy not resolvable": (8, 14, 0),
     "--proto unknown name": (8, 18, 0),
     "--cacert missing": (8, 18, 0),
@@ -849,6 +894,34 @@ SCENARIOS = [
         False,
         {},
     ),
+    (
+        "resume, a 206 starting at the offset",
+        lambda w: ["-C", "-", "-o", _copy(w, "partial"), w["range_from_3"] + "/"],
+        {},
+        False,
+        {},
+    ),
+    (
+        "33: resume, a 206 starting elsewhere",
+        lambda w: ["-C", "-", "-o", _copy(w, "partial"), w["range_from_5"] + "/"],
+        {},
+        False,
+        {},
+    ),
+    (
+        "33: resume, a 206 with no Content-Range",
+        lambda w: ["-C", "-", "-o", _copy(w, "partial"), w["range_none"] + "/"],
+        {},
+        False,
+        {},
+    ),
+    (
+        "2: -C with --remove-on-error",
+        lambda w: ["-C", "-", "--remove-on-error", "-o", _copy(w, "partial"), w["origin"] + "/"],
+        {},
+        False,
+        {},
+    ),
     ("36: resume past the end", lambda w: ["-C", "-", "-o", _copy(w, "partial"), w["range_416"] + "/"], {}, False, {}),
     (
         "55: upload reset",
@@ -862,6 +935,12 @@ SCENARIOS = [
     ("unknown encoding --compressed", lambda w: ["--compressed", w["unknown_encoding"] + "/"], {}, False, {}),
     ("63: --max-filesize", lambda w: ["--max-filesize", "10", w["big_body"] + "/"], {}, False, {}),
     ("150 headers", lambda w: ["-w", "[%{num_headers}]", w["many_headers"] + "/"], {}, False, {}),
+    ("56: headers over 300 KB", lambda w: [w["headers_300k"] + "/"], {}, False, {}),
+    ("100: over 5000 headers", lambda w: [w["headers_5000"] + "/"], {}, False, {}),
+    ("8: conflicting Content-Length", lambda w: [w["cl_conflict"] + "/"], {}, False, {}),
+    ("8: negative Content-Length", lambda w: [w["cl_negative"] + "/"], {}, False, {}),
+    ("Content-Length list of one number", lambda w: [w["cl_list"] + "/"], {}, False, {}),
+    ("8: NUL in a header", lambda w: [w["nul_header"] + "/"], {}, False, {}),
     ("100: a 200 KB header", lambda w: [w["huge_header"] + "/"], {}, False, {}),
     ("3: no host", lambda w: ["-w", "[%{exitcode}]", "http:///x"], {}, False, {}),
     # Flags the fallback took on from curl's list (one request each, so what

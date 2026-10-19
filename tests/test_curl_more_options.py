@@ -241,7 +241,7 @@ def test_resolve_and_connect_to_keep_the_host(files, tmp_path, monkeypatch, caps
         monkeypatch, capsysbinary, tmp_path, ["-s", "--connect-to", "::127.0.0.1:%s" % port, "http://any.example/echo"]
     )
     assert rc == 0 and out.out.split()[1] == b"any.example"
-    assert socket.getaddrinfo.__module__ == "socket", "restored after the transfer"
+    assert socket.getaddrinfo.__module__ == "socket", "never replaced"
 
 
 def test_address_family(files, tmp_path, monkeypatch, capsysbinary):

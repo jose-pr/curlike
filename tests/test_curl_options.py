@@ -52,6 +52,12 @@ class _Echo(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b"busy")
             return
+        if self.path.startswith("/cut"):
+            self.send_response(200)
+            self.send_header("Content-Length", "100")
+            self.end_headers()
+            self.wfile.write(b"short")
+            return
         if self.path.startswith("/404"):
             self.send_response(404)
             self.send_header("Content-Length", "7")
@@ -346,8 +352,8 @@ def test_retry_a_transient_status_with_backoff(echo, naps, monkeypatch, capsysbi
     _Echo.flaky = 2
     rc, out = _fallback(monkeypatch, capsysbinary, ["--retry", "3", echo + "/flaky"])
     assert rc == 0 and _seen(out)["path"] == "/flaky" and naps == [1.0, 2.0]
-    assert b"Warning: Problem : HTTP error. Will retry in 1 second. 3 retries left." in out.err
-    assert b"Will retry in 2 seconds. 2 retries left." in out.err
+    assert b"Warning: Problem : HTTP error. Retrying in 1 second. 3 retries left." in out.err
+    assert b"Retrying in 2 seconds. 2 retries left." in out.err
 
 
 def test_retry_gives_up_with_the_last_answer(echo, naps, monkeypatch, capsysbinary):
@@ -380,6 +386,33 @@ def test_retry_connrefused_and_all_errors(echo, naps, monkeypatch, capsysbinary)
     del naps[:]
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "-f", "--retry", "1", echo + "/404"])
     assert rc == 22 and naps == [], "a 404 is not transient"
+
+
+def test_every_failed_attempt_prints_its_error_line(naps, monkeypatch, capsysbinary):
+    rc, out = _fallback(monkeypatch, capsysbinary, ["-S", "-s", "--retry", "2", "http://nonexistent.invalid/"])
+    assert rc == 6 and naps == [1.0, 2.0], "a failed lookup is transient, as in curl"
+    assert out.err.count(b"curl: (6) Could not resolve host: nonexistent.invalid") == 3
+    rc, out = _fallback(monkeypatch, capsysbinary, ["--retry", "1", "http://nonexistent.invalid/"])
+    assert b"Warning: Problem : timeout. Retrying in 1 second. 1 retry left." in out.err
+
+
+def test_a_body_cut_short_is_retried_only_for_all_errors(echo, naps, monkeypatch, capsysbinary):
+    rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "--retry", "1", echo + "/cut"])
+    assert rc == 18 and naps == []
+    rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "--retry", "1", "--retry-all-errors", echo + "/cut"])
+    assert rc == 18 and naps == [1.0] and out.out == b"shortshort", "each attempt delivers what arrived, as curl does"
+
+
+def test_retry_after_zero_is_the_backoff_and_one_past_the_limit_stops(echo, naps, monkeypatch, capsysbinary):
+    _Echo.flaky, _Echo.retry_after = 1, "0"
+    rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "--retry", "2", echo + "/flaky"])
+    assert rc == 0 and naps == [1.0]
+    del naps[:]
+    _Echo.flaky, _Echo.retry_after = 1, "30"
+    rc, out = _fallback(monkeypatch, capsysbinary, ["--retry", "2", "--retry-max-time", "5", echo + "/flaky"])
+    assert naps == [] and out.out == b"busy"
+    assert b"Warning: The Retry-After: time would make this command line exceed the maximum " in out.err
+    assert b"Warning: allowed time for retries." in out.err
 
 
 # --------------------------------------------------------------------------- #
