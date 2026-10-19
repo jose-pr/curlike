@@ -149,7 +149,28 @@ def _echo(conn, head):
     )
     if _header(head, "Cookie"):
         body += b"|cookie=" + _header(head, "Cookie").encode()
+    if _header(head, "Referer"):
+        body += b"|referer=" + _header(head, "Referer").encode()
     _respond(conn, "200 OK", body)
+
+
+def _redirector(conn, head):
+    """Redirects: /chain/N to /chain/N-1 down to /chain/0, /to-<scheme> to a
+    URL of that scheme, /other to the same server under another name,
+    /set-hop to /e with a cookie; anything else is :func:`_echo`."""
+    path = head.split(b" ")[1].decode() if b" " in head else "/"
+    port = conn.getsockname()[1]
+    if path.startswith("/chain/") and int(path[7:]) > 0:
+        return _respond(conn, "302 Found", extra=["Location: /chain/%d" % (int(path[7:]) - 1)])
+    for scheme in ("ftp", "file", "gopher"):
+        if path == "/to-" + scheme:
+            host = "" if scheme == "file" else "127.0.0.1:1"
+            return _respond(conn, "302 Found", extra=["Location: %s://%s/x" % (scheme, host)])
+    if path == "/other":
+        return _respond(conn, "302 Found", extra=["Location: http://localhost:%d/e" % port])
+    if path == "/set-hop":
+        return _respond(conn, "302 Found", extra=["Set-Cookie: hop=1; Path=/", "Location: /e"])
+    _echo(conn, head)
 
 
 def _port_note(port):
@@ -464,6 +485,7 @@ def world(request, tmp_path_factory):
             ("digest_proxy", _digest_proxy()),
             ("digest_or_basic_proxy", _digest_proxy(offer_basic=True)),
             ("echo", _echo),
+            ("redirector", _redirector),
             ("header_proxy", _header_proxy),
             ("stalls", _stalls),
             ("longer_than_said", _longer_than_said),
@@ -627,6 +649,66 @@ SCENARIOS = [
     ("404 -f", lambda w: ["-f", w["origin"] + "/404"], {}, False, {}),
     ("500 --fail-with-body", lambda w: ["--fail-with-body", w["origin"] + "/500"], {}, False, {}),
     ("redirect loop", lambda w: ["-L", "--max-redirs", "2", w["origin"] + "/loop"], {}, False, {}),
+    # Redirects: the limit, the schemes, what each hop carries.
+    ("-L default limit", lambda w: ["-L", w["redirector"] + "/chain/55"], {}, False, {}),
+    ("-L 50 hops", lambda w: ["-L", w["redirector"] + "/chain/50"], {}, False, {}),
+    ("--max-redirs 0", lambda w: ["-L", "--max-redirs", "0", w["redirector"] + "/chain/1"], {}, False, {}),
+    ("--max-redirs 1, 1 hop", lambda w: ["-L", "--max-redirs", "1", w["redirector"] + "/chain/1"], {}, False, {}),
+    ("--max-redirs 1, 2 hops", lambda w: ["-L", "--max-redirs", "1", w["redirector"] + "/chain/2"], {}, False, {}),
+    ("--max-redirs -1", lambda w: ["-L", "--max-redirs", "-1", w["redirector"] + "/chain/60"], {}, False, {}),
+    (
+        "--max-redirs 0 -w",
+        lambda w: ["-L", "--max-redirs", "0", "-w", "[%{exitcode} %{num_redirects}]", w["redirector"] + "/chain/1"],
+        {},
+        False,
+        {},
+    ),
+    # curl fetches ftp:// where it is built with FTP (here it tries to connect, 7); this command has none.
+    ("redirect to ftp", lambda w: ["-L", w["redirector"] + "/to-ftp"], {}, False, {7: 1}),
+    ("redirect to file", lambda w: ["-L", w["redirector"] + "/to-file"], {}, False, {}),
+    ("redirect to gopher", lambda w: ["-L", w["redirector"] + "/to-gopher"], {}, False, {}),
+    (
+        "--proto-redir =https",
+        lambda w: ["-L", "--proto-redir", "=https", w["redirector"] + "/other"],
+        {},
+        False,
+        {},
+    ),
+    ("-H Host on another host", lambda w: ["-L", "-H", "Host: custom.test", w["redirector"] + "/other"], {}, False, {}),
+    (
+        "-H Host on another host, --location-trusted",
+        lambda w: ["--location-trusted", "-H", "Host: custom.test", w["redirector"] + "/other"],
+        {},
+        False,
+        {},
+    ),
+    (
+        "-H Host on the same host",
+        lambda w: ["-L", "-H", "Host: custom.test", w["redirector"] + "/chain/1"],
+        {},
+        False,
+        {},
+    ),
+    ("-c, a cookie set by a hop", lambda w: ["-L", "-c", _jar(w), w["redirector"] + "/set-hop"], {}, False, {}),
+    ("-b file, a cookie set by a hop", lambda w: ["-L", "-b", _jar(w), w["redirector"] + "/set-hop"], {}, False, {}),
+    ("-D - with -L", lambda w: ["-D", "-", "-L", w["redirector"] + "/chain/2"], {}, False, {}),
+    ("-i with -L", lambda w: ["-i", "-L", w["redirector"] + "/chain/2"], {}, False, {}),
+    ("-e ;auto", lambda w: ["-L", "-e", ";auto", w["redirector"] + "/chain/2"], {}, False, {}),
+    ("-e URL;auto", lambda w: ["-L", "-e", "http://start.test/;auto", w["redirector"] + "/chain/2"], {}, False, {}),
+    (
+        "-e URL kept on every hop",
+        lambda w: ["-L", "-e", "http://start.test/", w["redirector"] + "/chain/2"],
+        {},
+        False,
+        {},
+    ),
+    (
+        "-w referer with ;auto",
+        lambda w: ["-L", "-e", ";auto", "-o", os.devnull, "-w", "[%{referer}]", w["redirector"] + "/chain/2"],
+        {},
+        False,
+        {},
+    ),
     # Connecting.
     ("refused", lambda w: [w["dead"] + "/"], {}, False, {}),
     ("no such host", lambda w: ["http://nonexistent.invalid/"], {}, False, {}),
@@ -1318,6 +1400,15 @@ def _localhost(world, name):
 def _write(world, name, text):
     path = world["tmp"] / name
     path.write_text(text, encoding="ascii")
+    return str(path)
+
+
+def _jar(world):
+    """A fresh, empty cookie jar path for one run."""
+    import uuid
+
+    path = world["tmp"] / ("jar-%s" % uuid.uuid4().hex[:8])
+    path.write_text("# Netscape HTTP Cookie File\n")
     return str(path)
 
 

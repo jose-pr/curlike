@@ -27,6 +27,13 @@ class _Hop(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
+        if self.path.startswith("/c/"):  # a cookie, then on to the target
+            self.send_response(302)
+            self.send_header("Set-Cookie", "hop=1; Path=/")
+            self.send_header("Location", self.path[3:])
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         _Hop.seen[self.server.server_address[1]] = {
             "method": self.command,
             "body": body.decode(),
@@ -34,6 +41,8 @@ class _Hop(BaseHTTPRequestHandler):
             "cookie": self.headers.get("Cookie"),
         }
         self.send_response(200)
+        if self.path == "/fin":
+            self.send_header("Set-Cookie", "fin=1; Path=/")
         self.send_header("Content-Length", "0")
         self.end_headers()
 
@@ -120,3 +129,44 @@ def test_redirect_methods_and_bodies(flags, expected, hosts, monkeypatch, capsys
         hop = _landed(a)
         got.append("%s/%s" % (hop.get("method"), hop.get("body")))
     assert got == expected
+
+
+def _jar_rows(path):
+    return sorted(
+        (cols[0], cols[5])
+        for cols in (line.split("	") for line in path.read_text(encoding="utf-8").splitlines())
+        if len(cols) == 7
+    )
+
+
+def test_a_hops_cookies_reach_the_next_hop_and_the_jar(hosts, tmp_path, monkeypatch, capsysbinary):
+    a, b = hosts
+    jar = tmp_path / "jar.txt"
+    rc, _ = _fallback(monkeypatch, capsysbinary, ["-s", "-L", "-c", str(jar), "%s/c/%s/fin" % (a, b)])
+    assert rc == 0 and _landed(b)["cookie"] == "hop=1"
+    assert _jar_rows(jar) == [("127.0.0.1", "fin"), ("127.0.0.1", "hop")]
+
+
+def test_the_last_responses_cookie_is_filed_under_the_last_host(hosts, tmp_path, monkeypatch, capsysbinary):
+    a, b = hosts
+    other = b.replace("127.0.0.1", "localhost")
+    jar = tmp_path / "jar.txt"
+    rc, _ = _fallback(monkeypatch, capsysbinary, ["-s", "-L", "-c", str(jar), "%s/r/302/%s/fin" % (a, other)])
+    assert rc == 0 and _jar_rows(jar) == [("localhost", "fin")]
+
+
+def test_credentials_come_back_with_the_first_origin(hosts, monkeypatch, capsysbinary):
+    a, b = hosts
+    away = "%s/r/302/%s/r/302/%s/landed" % (a, b, a)
+    _fallback(monkeypatch, capsysbinary, ["-s", "-L", "-u", "me:pw", away])
+    assert _landed(a)["auth"], "a hop back to the first origin carries the credentials again"
+    assert not _landed(b).get("auth"), "and the hop in between did not"
+
+
+def test_more_hops_than_urllib_allowed(hosts, monkeypatch, capsysbinary):
+    a, _b = hosts
+    chain = "%s/r/302/" * 12 + "%s/landed"
+    rc, _ = _fallback(monkeypatch, capsysbinary, ["-s", "-L", chain % ((a,) * 13)])
+    assert rc == 0 and _landed(a)["method"] == "GET"
+    rc, out = _fallback(monkeypatch, capsysbinary, ["-sS", "-L", "--max-redirs", "3", chain % ((a,) * 13)])
+    assert rc == 47 and b"Maximum (3) redirects followed" in out.err
