@@ -21,7 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   URL on the command line (through syshttp: WinHTTP, CFNetwork, libproxy, PAC,
   WPAD); its redirect hops keep that decision, as with curl's own `--proxy`.
   The real curl is handed that proxy with `--proxy` (curl reads only the
-  `*_proxy` variables). `SYSHTTP_SYSTEM_PROXY=0` turns it off.
+  `*_proxy` variables). `SYSHTTP_SYSTEM_PROXY=0` turns it off. Of a list
+  (`PROXY a; PROXY b; DIRECT`) the first proxy that accepts a connection is
+  used; with none and no DIRECT, exit 7 and real curl is not run.
 
 ### Changed
 

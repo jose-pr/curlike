@@ -199,6 +199,11 @@ def maybe_run_system_curl(argv, entry=None):
         if not use_real_curl(argv):
             return None
         extra = agent_proxy_argv(argv)
+    except agent_proxy.NoReachableProxyError as exc:
+        # Nothing to hand real curl: no proxy the system names answers, and
+        # its list holds no DIRECT. curl's own exit for an unreachable proxy.
+        print('curl: (7) %s' % exc, file=sys.stderr)
+        return 7
     except (ValueError, ImportError) as exc:
         print('curl: ignoring the configured proxy: %s' % exc, file=sys.stderr)
         extra = []

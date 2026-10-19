@@ -16,6 +16,9 @@ def _clean_settings(monkeypatch):
     from syshttp import proxy
 
     monkeypatch.setattr(proxy, "system_proxy_map", lambda: None)
+    # Every proxy a fake configuration names is reachable, unless a test probes.
+    monkeypatch.setattr(proxy, "first_reachable", lambda answer: answer[0])
+    monkeypatch.setattr(proxy, "_picked", {})
     # Nor its certificate store and smart cards when a server asks for a client
     # certificate; the OS still verifies servers.
     import sslcontext

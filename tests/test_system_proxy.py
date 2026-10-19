@@ -123,3 +123,35 @@ def test_cert_turns_off_the_os_stores_client_certificates(monkeypatch, cert):
     data = Path(__file__).parent / "data"
     tls.build_ssl_context(False, cert=cert and str(data / cert), key=cert and str(data / "client-rsa.key"))
     assert asked == [cert is None]
+
+
+class _Unreachable:
+    """The system names one proxy, and it does not answer."""
+
+    def __getitem__(self, url):
+        entry = _Entry("http://down.example:3128")
+        entry.host, entry.port = "down.example", 3128
+        return [entry]
+
+
+def _nothing_answers(answer):
+    raise LookupError("no reachable proxy in the given list")
+
+
+def test_the_shim_exits_7_when_no_system_proxy_answers(monkeypatch, capsys, no_proxy_vars):
+    monkeypatch.setattr(agent_proxy, "system_proxy_map", lambda: _Unreachable())
+    monkeypatch.setattr(agent_proxy, "first_reachable", _nothing_answers)
+    calls = _capture_real_curl(monkeypatch)
+    assert curl.main(["-s", "https://api.example.com/x"]) == 7
+    assert calls == [], "real curl is not run without a route"
+    assert capsys.readouterr().err.startswith(
+        "curl: (7) no proxy the system's configuration names is reachable: down.example:3128"
+    )
+
+
+def test_the_fallback_exits_7_when_no_system_proxy_answers(monkeypatch, capsysbinary, no_proxy_vars):
+    monkeypatch.setattr(agent_proxy, "system_proxy_map", lambda: _Unreachable())
+    monkeypatch.setattr(agent_proxy, "first_reachable", _nothing_answers)
+    rc, out = _fallback(monkeypatch, capsysbinary, ["-sS", "http://api.example.com/x"])
+    assert rc == 7
+    assert b"curl: (7) no proxy the system's configuration names is reachable: down.example:3128" in out.err

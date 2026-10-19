@@ -88,7 +88,11 @@ another. The proxy settings (`<P>_PROXY`, `<P>_PROXY_AUTH`,
   for URL userinfo). With no proxy variable at all, the proxy the **system's
   configuration** names for the URL asked for (the command's first URL;
   syshttp: WinHTTP, CFNetwork, libproxy, PAC, WPAD) is prepended the same
-  way, since curl reads none of those; a DIRECT answer adds nothing.
+  way, since curl reads none of those; a DIRECT answer adds nothing. Of a list
+  the first proxy that accepts a connection is handed over; when none does
+  and the list holds no DIRECT, the shim and the fallback both exit 7
+  (`curl: (7) no proxy the system's configuration names is reachable: …`) and
+  real curl is not run.
   `<P>_SYSTEM_PROXY=0` turns that off. Your own `-U user:pass` keeps the
   configured proxy and replaces its credential. A **`prefix` gateway is served by the fallback**, not real
   curl: curl cannot express `<proxy><endpoint><url>` per hop (multi-URL, `-L`,

@@ -760,6 +760,11 @@ def run(args):
         rc = fail(args, transfer, exc.code, str(exc))
         args.report(tokens, transfer, rc)
         return rc
+    except agent_proxy.NoReachableProxyError as exc:
+        # curl's answer to a proxy it cannot connect to.
+        rc = fail(args, transfer, EXIT_CONNECT, str(exc))
+        args.report(tokens, transfer, rc)
+        return rc
 
     if args.verbose and not args.silent:
         print('Request: %s %s' % (method, url), file=sys.stderr)
