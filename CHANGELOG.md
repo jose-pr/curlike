@@ -98,3 +98,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - With the cookie engine (-b FILE or -c), the cookies a redirect hop sets are
   sent to the next hop and filed under that hop's host, not the first URL's.
 
+- --digest and --anyauth answer a server's 401 once, with one implementation
+  shared with the proxy's: a rejected password is sent once (two requests, not
+  seven) and the 401 and its body are the response; a challenge curlike cannot
+  answer (Negotiate, Bearer) is the response too, not exit 2;
+  algorithm=SHA-256 works on Python 3.9; quotes in the user name or realm are
+  escaped.
+
+- The netrc is read as curl reads it: quoted words with backslash escapes,
+  comments, a machine name in any case, the first matching entry in file
+  order, a login with no password (an empty one, not None), and the login a
+  user@ URL names. -u USER asks for the password, as curl does.
+
