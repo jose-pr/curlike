@@ -9,7 +9,9 @@ from ._duho import Meta, Arg
 from .args import Group, read_source, url_encoded
 from .errors import EXIT_PROTOCOL, EXIT_READ, EXIT_URL, EXIT_USAGE, EarlyExit, LocalError
 
-USER_AGENT = "Python-curl/1.0"
+#: The curl release the command answers as (``%{curl_version}``, the User-Agent).
+CURL_VERSION = (8, 22, 0)
+USER_AGENT = "curl/%d.%d.%d" % CURL_VERSION
 
 #: The schemes the fallback speaks.
 SCHEMES = ('http', 'https')
@@ -82,12 +84,42 @@ def check_glob(url):
         raise EarlyExit(EXIT_URL, '(3) bad range specification in position %d:' % (depth[1] + 2))
 
 
+_URL_REFUSED = re.compile('[\x00-\x20\x7f]')
+
+
+def encode_non_ascii(url):
+    """``url`` with every non-ASCII character in its path, query and
+    fragment as the percent-encoded bytes of its UTF-8, and a non-ASCII host
+    name in IDNA form, as curl sends them."""
+    if url.isascii():
+        return url
+    parts = urllib.parse.urlsplit(url)
+    netloc = parts.netloc
+    if not netloc.isascii():
+        userinfo, at, hostport = netloc.rpartition('@')
+        host, colon, port = hostport.rpartition(':') if not hostport.endswith(']') else (hostport, '', '')
+        try:
+            host = host.encode('idna').decode('ascii')
+        except UnicodeError:
+            raise LocalError(EXIT_URL, 'URL rejected: Bad hostname')
+        netloc = userinfo + at + host + colon + port
+    quoted = parts._replace(
+        netloc=netloc,
+        path=urllib.parse.quote(parts.path, safe="/%:@!$&'()*+,;=~-._"),
+        query=urllib.parse.quote(parts.query, safe="/%:@!$&'()*+,;=~-._?"),
+        fragment=urllib.parse.quote(parts.fragment, safe="/%:@!$&'()*+,;=~-._?"),
+    )
+    return urllib.parse.urlunsplit(quoted)
+
+
 def check_url(url):
     """curl's verdict on a URL before anything is sent: 1 for a scheme
     curl does not speak, 3 for one it cannot parse (a broken IPv6 literal, a
     port out of range, no host). A scheme curl speaks and the fallback does
     not raises ``NotImplementedError``."""
     scheme = url.split('://', 1)[0].lower()
+    if _URL_REFUSED.search(url):
+        raise LocalError(EXIT_URL, 'URL rejected: Malformed input to a URL function')
     if scheme not in SCHEMES:
         if scheme in CURL_SCHEMES:
             raise NotImplementedError('Unsupported protocol: %s' % scheme)
@@ -213,6 +245,16 @@ def has_header(headers, name):
     return any(k.lower() == name.lower() for k in headers)
 
 
+class HeaderValues(str):
+    """A header given more than once by ``-H``: ``values`` are sent as one
+    line each (the string itself is the last one)."""
+
+    def __new__(cls, values):
+        value = str.__new__(cls, values[-1])
+        value.values = list(values)
+        return value
+
+
 def _set_header(headers, key, value):
     """Set ``key`` case-insensitively (one entry per name, the caller's case)."""
     for existing in list(headers):
@@ -305,6 +347,7 @@ class RequestArgs(Group):
             check_glob(url)
         check_url(url)
         self.check_protocol(url)
+        url = encode_non_ascii(url)
         url = self.remember_auth_url(url)  # user:pw@ -> credentials
         if not self.path_as_is:
             url = normalize_path(url)
@@ -352,7 +395,7 @@ class RequestArgs(Group):
         (``--json``) -- then ``-H`` on top: ``Name: v`` sets, ``Name:`` removes
         the header (a default included), ``Name;`` sends it empty; ``@file``
         (``@-`` stdin) is one header per line of the file."""
-        headers = {'User-Agent': self.user_agent or USER_AGENT}
+        headers = {'User-Agent': self.user_agent or USER_AGENT, 'Accept': '*/*'}
         authorization = self.authorization()
         if authorization:
             headers['Authorization'] = authorization
@@ -365,6 +408,7 @@ class RequestArgs(Group):
             headers['Range'] = 'bytes=' + self.range
         headers.update(self.body_headers())
         removed = set()
+        given = {}  # lower-cased name -> every value -H gave it, in order
         for header in _header_lines(self.header or []):
             if ':' in header:
                 key, value = header.split(':', 1)
@@ -373,13 +417,17 @@ class RequestArgs(Group):
                     _set_header(headers, key, None)
                     del headers[key]
                     removed.add(key.lower())
+                    given.pop(key.lower(), None)
                     continue
             elif header.endswith(';') and header[:-1].strip():
                 key, value = header[:-1].strip(), ''
             else:
                 self.usage_error('Invalid header: %s' % header)
             removed.discard(key.lower())
+            given.setdefault(key.lower(), []).append(value)
             _set_header(headers, key, value)
+            if len(given[key.lower()]) > 1:
+                headers[key] = HeaderValues(given[key.lower()])
         return headers, removed
 
     def query_url(self, url, body):

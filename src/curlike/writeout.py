@@ -13,14 +13,12 @@ from typing import Optional
 from ._duho import Meta, Arg
 from .args import Group, first_header
 from .errors import EXIT_READ, EarlyExit
+from .request import CURL_VERSION
 from .routing import caller_url
 
 #: The ``--write-out`` variables the fallback reports, with curl's meaning and
 #: format. Any other ``%{name}`` (``time_connect``, ``remote_ip``, ``json``...)
 #: or an ``%output{file}`` is refused before the request, like an unsupported flag.
-#: The curl release the command answers as (``%{curl_version}``).
-CURL_VERSION = (8, 22, 0)
-
 WRITE_OUT_VARIABLES = frozenset(
     [
         'content_type',
@@ -96,7 +94,8 @@ def parse_write_out(fmt):
     if fmt.startswith('@'):
         source = fmt[1:]
         try:
-            fmt = sys.stdin.read() if source == '-' else Path(source).read_text(encoding='utf-8')
+            data = sys.stdin.buffer.read() if source == '-' else Path(source).read_bytes()
+            fmt = data.decode('utf-8', 'surrogateescape')  # any byte comes out as it went in
         except OSError as exc:
             raise EarlyExit(EXIT_READ, 'Failed to open %s' % source)
     tokens, text, i = [], [], 0
@@ -143,6 +142,13 @@ def parse_write_out(fmt):
     return tokens
 
 
+def raw_header_text(text):
+    """Header text http.client read as latin-1, as the text of its bytes read
+    as UTF-8 (a byte that is not UTF-8 survives as a surrogate that writes
+    back as itself)."""
+    return text.encode('latin-1', 'replace').decode('utf-8', 'surrogateescape')
+
+
 def _header_json(header_items):
     """curl's ``%{header_json}``: lower-cased names in first-seen order, each
     with all its values, one name per line."""
@@ -162,7 +168,7 @@ def write_out_values(args, transfer, exitcode):
     total = time.monotonic() - transfer.started
     sent_url, method, upload = transfer.sent[-1] if transfer.sent else (transfer.target, transfer.method, 0)
     effective = caller_url(sent_url, transfer.plan)
-    headers = transfer.header_items
+    headers = [(raw_header_text(k), raw_header_text(v)) for k, v in transfer.header_items]
     location = first_header(headers, 'location')
     redirect = urllib.parse.urljoin(effective, location) if location and 300 <= transfer.status < 400 else ''
     # curl reports the whole elapsed time as start-transfer when nothing answered.
@@ -321,7 +327,7 @@ def _write_stream(name, text):
         if raw is None:
             stream.write(text)
         else:
-            raw.write(text.encode('utf-8'))
+            raw.write(text.encode('utf-8', 'surrogateescape'))
             raw.flush()
     except OSError:
         if name != 'stderr':
@@ -342,7 +348,7 @@ def emit_write_out(tokens, values, header_items, exitcode):
                 return
             continue
         if kind == 'header':
-            value = first_header(header_items, value)
+            value = first_header([(raw_header_text(k), raw_header_text(v)) for k, v in header_items], value)
         elif kind == 'var':
             value = values[value]
         _write_stream(stream, value)

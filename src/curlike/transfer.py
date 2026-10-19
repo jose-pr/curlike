@@ -198,10 +198,12 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def format_response_headers(status, reason, header_items):
-    status_line = ('HTTP/1.1 %s %s' % (status, reason or '')).rstrip()
+def format_response_headers(status, reason, header_items, version=11):
+    """The response head as it came: http.client read the bytes as latin-1,
+    so latin-1 puts the same bytes back."""
+    status_line = ('HTTP/%s %s %s' % ('1.0' if version == 10 else '1.1', status, reason or '')).rstrip()
     header_text = ''.join('%s: %s\r\n' % (k, v) for k, v in header_items)
-    return ('%s\r\n%s\r\n' % (status_line, header_text)).encode('utf-8')
+    return ('%s\r\n%s\r\n' % (status_line, header_text)).encode('latin-1', 'replace')
 
 
 def _header_defect(response):
@@ -430,6 +432,11 @@ def _bad_chunk(exc):
     return False
 
 
+def raw_response(response):
+    """The ``HTTPResponse`` behind ``response`` (an ``HTTPError`` wraps it)."""
+    return response.fp if isinstance(response, urllib.error.HTTPError) else response
+
+
 def response_socket(response):
     """The socket a response is read from, or ``None``."""
     raw = response.fp if isinstance(response, urllib.error.HTTPError) else response
@@ -506,7 +513,9 @@ def follow(args, opener, req, transfer):
         if limit is not None and seen >= limit:
             raise TooManyRedirects(resp, status)
         replies = args.connection.connect_replies
-        head = format_response_headers(status, getattr(resp, 'reason', ''), list(resp.headers.items()))
+        head = format_response_headers(
+            status, getattr(resp, 'reason', ''), list(resp.headers.items()), getattr(resp, 'version', 11)
+        )
         transfer.hop_heads.append((b''.join(replies[consumed:]), head))
         consumed = len(replies)
         resp.close()
@@ -583,7 +592,7 @@ def exchange(args, opener, req, url, transfer, may_retry=False):
     except EncodingError as exc:
         resp.close()
         return fail(args, transfer, EXIT_BAD_ENCODING, str(exc))
-    header_bytes = format_response_headers(status, reason, header_items)
+    header_bytes = format_response_headers(status, reason, header_items, getattr(raw_response(resp), 'version', 11))
     transfer.size_header = len(header_bytes) + sum(len(r) for r in args.connection.connect_replies)
     # curl shows each hop's head, the proxy's CONNECT reply before its own.
     shown = [] if args.suppress_connect_headers else list(args.connection.connect_replies)
@@ -819,6 +828,7 @@ def _attempts(args, typed, url, method, plan, context, removed, data, headers):
         transfer.retries = max(args.retry or 0, 0) - retries
         opener = build_opener(args, plan, context, transfer, removed)
         req = urllib.request.Request(url, data=data, headers=dict(headers), method=method)
+        req.curl_removed = frozenset(removed)  # headers -H 'Name:' keeps off the wire
         try:
             rc = exchange(args, opener, req, url, transfer, may_retry=retries > 0 and in_time)
             break

@@ -19,6 +19,7 @@ import urllib.parse
 import urllib.request
 
 from .errors import EXIT_USAGE, EarlyExit, LocalError
+from .request import HeaderValues
 from .response import LimitedResponse
 
 EXIT_INTERFACE = 45
@@ -392,6 +393,12 @@ def _reply_head(response):
     return (head + '\r\n').encode('latin-1')
 
 
+def _wire(value):
+    """Header text as the bytes that go out: its UTF-8, which http.client
+    sends as latin-1 text."""
+    return value.encode('utf-8', 'surrogateescape').decode('latin-1') if isinstance(value, str) else value
+
+
 class Connector(object):
     """What every connection of one transfer shares: ``source`` (an address
     or ``None``), ``ports`` (``(low, high)`` or ``None``), ``pins`` (SHA-256
@@ -509,7 +516,9 @@ class Connector(object):
             raise
         return sock
 
-    def connection_class(self, base, tunnel_headers=None, socks=None, proxy_tls=None, proxy_auth=None):
+    def connection_class(
+        self, base, tunnel_headers=None, socks=None, proxy_tls=None, proxy_auth=None, removed=frozenset()
+    ):
         """``base`` (``HTTPConnection`` / ``HTTPSConnection``) bound to this
         connector, its CONNECT carrying ``tunnel_headers`` too, its TCP
         connection made through ``socks`` (a :class:`Socks`) when given."""
@@ -536,6 +545,19 @@ class Connector(object):
                     )
                 else:
                     self._create_connection = connector.create_connection
+
+            def putrequest(self, method, url, skip_host=False, skip_accept_encoding=False):
+                # Accept-Encoding is the caller's (--compressed, -H), never http.client's "identity".
+                base.putrequest(self, method, url, skip_host, True)
+
+            def putheader(self, header, *values):
+                if header.lower() in removed:
+                    return  # -H 'Name:' removes a header urllib or http.client adds too
+                if len(values) == 1 and isinstance(values[0], HeaderValues):
+                    for each in values[0].values:  # a header -H gave more than once: a line each
+                        base.putheader(self, header, _wire(each))
+                    return
+                base.putheader(self, header, *[_wire(v) for v in values])
 
             def _send_output(self, message_body=None, encode_chunked=False):
                 # The request leaves now (-w time_pretransfer); its head is
@@ -647,6 +669,7 @@ class ConnectHTTPHandler(urllib.request.HTTPHandler):
             getattr(req, 'socks_via', None),
             getattr(req, 'proxy_tls', None),
             getattr(req, 'proxy_auth', None),
+            getattr(req, 'curl_removed', frozenset()),
         )
         return self.do_open(klass, req)
 
@@ -668,6 +691,7 @@ class ConnectHTTPSHandler(urllib.request.HTTPSHandler):
             getattr(req, 'socks_via', None),
             getattr(req, 'proxy_tls', None),
             getattr(req, 'proxy_auth', None),
+            getattr(req, 'curl_removed', frozenset()),
         )
         kwargs = {'context': self._context}
         if hasattr(self, '_check_hostname'):  # Python < 3.12

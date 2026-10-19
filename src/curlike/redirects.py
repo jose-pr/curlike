@@ -20,8 +20,8 @@ Checked against curl 8.21:
 import urllib.parse
 import urllib.request
 
-from .errors import EXIT_PROTOCOL, LocalError
-from .request import normalize_path
+from .errors import EXIT_PROTOCOL, EXIT_URL, LocalError
+from .request import _URL_REFUSED, encode_non_ascii, normalize_path
 from .routing import caller_url
 
 #: The statuses that name another URL to fetch.
@@ -79,6 +79,9 @@ class Follow(object):
         """The request that follows ``req`` (sent as ``previous_url``) after a
         ``code`` answer naming ``location``."""
         newurl = urllib.parse.urljoin(previous_url, location).replace(' ', '%20')
+        if _URL_REFUSED.search(newurl):
+            raise LocalError(EXIT_URL, 'The redirect target URL could not be parsed: Malformed input to a URL function')
+        newurl = encode_non_ascii(newurl)
         self.args.check_protocol(newurl, redirect=True)  # --proto / --proto-redir: exit 1
         scheme = newurl.split('://', 1)[0].lower()
         if scheme not in _FETCHABLE:
@@ -117,7 +120,7 @@ class Follow(object):
         if self.args.referer_auto():
             new_headers['Referer'] = _without_credentials(previous_url)
             self.referer = new_headers['Referer']
-        return urllib.request.Request(
+        hop = urllib.request.Request(
             newurl,
             data=data,
             headers=new_headers,
@@ -125,3 +128,5 @@ class Follow(object):
             unverifiable=True,
             method=new_method,
         )
+        hop.curl_removed = getattr(req, 'curl_removed', frozenset())
+        return hop
