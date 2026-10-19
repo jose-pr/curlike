@@ -111,6 +111,10 @@ def _socks5(sock, socks, host, port, resolve):
     chosen = _exact(sock, 2)[1]
     if chosen == 0x02:
         user, password = (socks.user or '').encode('utf-8'), (socks.password or '').encode('utf-8')
+        if len(user) > 255:
+            raise LocalError(EXIT_PROXY, 'Excessive username length for proxy auth')
+        if len(password) > 255:
+            raise LocalError(EXIT_PROXY, 'Excessive password length for proxy auth')
         sock.sendall(b'\x01' + bytes([len(user)]) + user + bytes([len(password)]) + password)
         status = _exact(sock, 2)
         if status[1] != 0:
@@ -125,6 +129,10 @@ def _socks5(sock, socks, host, port, resolve):
         literal = ipaddress.ip_address(_local_address(resolve, host, port))
     if literal is None:
         name = host.encode('idna')
+        if len(name) > 255:
+            raise LocalError(
+                EXIT_PROXY, 'SOCKS5: the destination hostname is too long to be resolved remotely by the proxy.'
+            )
         target = b'\x03' + bytes([len(name)]) + name
     elif literal.version == 4:
         target = b'\x01' + literal.packed
@@ -230,10 +238,29 @@ def subject_public_key_info(cert_der):
     return cert_der[pos : _tlv(cert_der, pos)[1]]
 
 
+class Pins(object):
+    """The SHA-256 digests a server key may have: given as hashes, or in a
+    file read at the first handshake (an ``http://`` transfer never reads
+    it, as in curl)."""
+
+    def __init__(self, digests=None, path=None):
+        self._digests = digests
+        self.path = path
+
+    def __bool__(self):
+        return True
+
+    def __contains__(self, digest):
+        if self._digests is None:
+            self._digests = _read_pin_file(self.path)
+        return digest in self._digests
+
+
 def parse_pins(spec):
     """``--pinnedpubkey``: ``sha256//BASE64[;sha256//BASE64...]``, or a file
-    holding the key (PEM ``PUBLIC KEY`` or DER) -> the set of SHA-256
-    digests a server key may have."""
+    holding the key (PEM ``PUBLIC KEY`` or DER) -> :class:`Pins`."""
+    if not spec.startswith('sha256//'):
+        return Pins(path=spec)
     if spec.startswith('sha256//'):
         pins = set()
         for part in spec.split(';'):
@@ -244,7 +271,11 @@ def parse_pins(spec):
                 pins.add(base64.b64decode(part[len('sha256//') :], validate=True))
             except ValueError:
                 raise ValueError('--pinnedpubkey: %r is not base64' % part)
-        return pins
+        return Pins(digests=pins)
+
+
+def _read_pin_file(spec):
+    """The digest of the key in the file ``spec`` (PEM ``PUBLIC KEY`` or DER)."""
     try:
         with open(spec, 'rb') as handle:
             data = handle.read()
@@ -367,7 +398,8 @@ class Connector(object):
     digests of acceptable server keys, or ``None``), ``http10`` (``-0``:
     HTTP/1.0 requests)."""
 
-    def __init__(self, source=None, ports=None, pins=None, http10=False, limits=None, resolver=None):
+    def __init__(self, source=None, ports=None, pins=None, http10=False, limits=None, resolver=None, unix=None):
+        self.unix = unix  # --unix-socket: every connection goes to this socket path
         self.getaddrinfo = resolver or socket.getaddrinfo  # --resolve, -4 / -6, the DNS flags
         self.limits = limits  # the options' time limits: connect_limit() / read_limit()
         self.source = source
@@ -391,6 +423,8 @@ class Connector(object):
         record = self.transfer
         if self.limits is not None:
             timeout = self.limits.connect_limit()  # None: no bound
+        if self.unix is not None:
+            return self._unix_connection(timeout)
         infos = self.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
         if record is not None:
             record.t_namelookup = time.monotonic()
@@ -442,6 +476,24 @@ class Connector(object):
         idle ``--timeout`` and ``-y``'s window, else none."""
         if self.limits is not None and hasattr(sock, 'settimeout'):
             sock.settimeout(self.limits.read_limit())
+
+    def _unix_connection(self, timeout):
+        """A connection to the ``--unix-socket`` path, timed like a TCP one."""
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            if timeout is not _DEFAULT_TIMEOUT:
+                sock.settimeout(timeout)
+            if self.transfer is not None:
+                self.transfer.t_namelookup = time.monotonic()
+            sock.connect(self.unix)
+        except OSError:
+            sock.close()
+            raise
+        if self.transfer is not None:
+            self.transfer.t_connect = time.monotonic()
+            self.transfer.remote = self.transfer.local = ('', 0)
+            self.transfer.connects += 1
+        return sock
 
     def check_pin(self, sock):
         _check_pins(sock, self.pins)
@@ -513,7 +565,8 @@ class Connector(object):
                 authorization = None
                 for _ in range(2):
                     lines = ['CONNECT %s HTTP/1.1' % target, 'Host: %s' % target]
-                    lines += ['%s: %s' % item for item in self._tunnel_headers.items()]
+                    # http.client (3.12+) keeps its own Host among them: one is enough.
+                    lines += ['%s: %s' % item for item in self._tunnel_headers.items() if item[0].lower() != 'host']
                     if authorization:
                         lines.append('Proxy-Authorization: %s' % authorization)
                     self.send(('\r\n'.join(lines) + '\r\n\r\n').encode('latin-1'))
@@ -542,6 +595,8 @@ class Connector(object):
             def _reopen(self):
                 raw = self._create_connection((self.host, self.port), self.timeout, self.source_address)
                 self.sock = proxy_tls.context.wrap_socket(raw, server_hostname=self.host) if proxy_tls else raw
+                if proxy_tls:
+                    _check_pins(self.sock, proxy_tls.pins)  # the proxy credential goes over this one too
 
             def connect(self):
                 self._connect_all()
@@ -549,6 +604,14 @@ class Connector(object):
                     connector.settle(self.sock)
 
             def _connect_all(self):
+                if connector.unix is not None:
+                    # TCP_NODELAY (http.client's own connect) is not for a Unix socket.
+                    self.sock = self._create_connection((self.host, self.port), self.timeout, self.source_address)
+                    if isinstance(self, http.client.HTTPSConnection):
+                        self.sock = self._context.wrap_socket(self.sock, server_hostname=self.host)
+                        connector.check_pin(self.sock)
+                        _appconnect()
+                    return
                 if proxy_tls is None:
                     base.connect(self)
                     if isinstance(self, http.client.HTTPSConnection):

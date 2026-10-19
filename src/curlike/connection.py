@@ -12,7 +12,7 @@ from ._duho import Meta, Arg
 from .args import Group
 from .errors import EXIT_CONNECT, EXIT_RESOLVE, EXIT_RESOLVE_PROXY, EXIT_TIMEOUT
 from .connector import Connector, parse_local_port, parse_pins, resolve_interface
-from .netconn import DnsOverride, make_resolver, unix_socket_handlers
+from .netconn import DnsOverride, make_resolver
 
 
 def _interface_addresses(name):
@@ -309,13 +309,13 @@ class ConnectionArgs(Group):
         servers = [s.strip() for s in (self.dns_servers or '').split(',') if s.strip()]
         context = None
         if self.doh_url:
-            from .tls import build_ssl_context
+            from .tls import UnusableContext, build_ssl_context
             from .errors import LocalError
 
             try:
                 context = build_ssl_context(self.doh_insecure, cacert=self.cacert, capath=self.capath)
-            except LocalError:
-                context = build_ssl_context(self.doh_insecure)
+            except LocalError as exc:
+                context = UnusableContext(exc)  # the lookup fails with 77, it never falls back to the OS store
         return DnsOverride(servers, sources, self.doh_url, context, self.connect_timeout or self.max_time)
 
     def effective_proxy(self):
@@ -355,7 +355,11 @@ class ConnectionArgs(Group):
         pins = parse_pins(self.pinnedpubkey) if getattr(self, 'pinnedpubkey', None) else None
         family = socket.AF_INET if self.ipv4 else socket.AF_INET6 if self.ipv6 else 0
         resolver = make_resolver(family, self.resolve or (), self.connect_to or (), self.dns_override())
-        return Connector(source, ports, pins, http10=self.http1_0, limits=self, resolver=resolver)
+        if self.unix_socket and not hasattr(socket, 'AF_UNIX'):
+            raise NotImplementedError('--unix-socket: this Python has no AF_UNIX sockets')
+        return Connector(
+            source, ports, pins, http10=self.http1_0, limits=self, resolver=resolver, unix=self.unix_socket or None
+        )
 
     def rate(self):
         """--limit-rate in bytes per second, or ``None``."""
@@ -370,10 +374,6 @@ class ConnectionArgs(Group):
             self.speed_limit if self.speed_limit is not None else 1,
             self.speed_time if self.speed_time is not None else 30,
         )
-
-    def connection_handlers(self, context):
-        """urllib handlers replacing the TCP ones (--unix-socket), or []."""
-        return unix_socket_handlers(self.unix_socket, context) if self.unix_socket else []
 
     def start_clock(self):
         """Start ``-m``'s clock: the whole attempt, redirect hops included."""

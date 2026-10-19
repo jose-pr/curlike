@@ -3,7 +3,10 @@
 (``--cert`` / ``--key`` / ``--pass``, PEM)."""
 
 import os
+import re
+import shutil
 import ssl
+import tempfile
 from typing import Optional
 
 from syshttp.tls import new_os_context
@@ -43,6 +46,28 @@ def _pem_only(option, value):
 
 #: curl's own override of the CA bundle, honoured like ``--cacert``.
 CA_BUNDLE_VAR = 'CURL_CA_BUNDLE'
+
+
+_CRL_BLOCK = re.compile(r'-----BEGIN X509 CRL-----.*?-----END X509 CRL-----', re.DOTALL)
+
+
+def load_crls(ctx, path):
+    """Load only the CRLs of the PEM file ``path`` into ``ctx``, as curl does:
+    a certificate in the file is not trusted by it. A file with no CRL, or one
+    that cannot be read, raises ``OSError`` / ``ssl.SSLError``."""
+    with open(path, encoding='ascii', errors='replace') as handle:
+        blocks = _CRL_BLOCK.findall(handle.read())
+    if not blocks:
+        raise ssl.SSLError('no CRL found in the file')
+    # OpenSSL reads CRLs from a file only.
+    scratch = tempfile.mkdtemp(prefix='curlike-crl-')
+    try:
+        crls = os.path.join(scratch, 'crls.pem')
+        with open(crls, 'w', encoding='ascii', newline='\n') as handle:
+            handle.write('\n'.join(blocks) + '\n')
+        ctx.load_verify_locations(cafile=crls)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def build_ssl_context(
@@ -100,10 +125,15 @@ def build_ssl_context(
         # curl's --crlfile: the chain is checked against these lists (82 when
         # the file cannot be loaded; a revoked certificate fails as 60).
         try:
-            ctx.load_verify_locations(cafile=crlfile)
+            load_crls(ctx, crlfile)
         except (OSError, ssl.SSLError) as exc:
             raise LocalError(EXIT_CRL, 'failed to load CRL file: %s (%s)' % (crlfile, exc))
         ctx.verify_flags |= ssl.VERIFY_CRL_CHECK_CHAIN
+    # Python 3.13 turns on strict X.509 checks that curl and older Pythons do
+    # not make (a leaf with no Authority Key Identifier fails them).
+    strict = getattr(ssl, 'VERIFY_X509_STRICT', 0)
+    if ctx.verify_flags & strict:
+        ctx.verify_flags &= ~strict
     if min_version is not None:
         ctx.minimum_version = min_version
     if max_version is not None:
@@ -412,7 +442,7 @@ class TLSArgs(Group):
         from .connector import parse_pins
 
         pins = parse_pins(self.proxy_pinnedpubkey) if self.proxy_pinnedpubkey else None
-        return ProxyTLS(context, pins)
+        return ProxyTLS(context, pins)  # a pin file is read at the proxy's handshake
 
     def _proxy_context(self):
         try:

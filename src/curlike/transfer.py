@@ -223,10 +223,7 @@ def build_opener(args, plan, context, transfer, removed):
     per hop instead."""
     args.connection.connect_replies = []
     args.connection.transfer = transfer
-    handlers = args.connection_handlers(context) or [
-        ConnectHTTPHandler(args.connection),
-        ConnectHTTPSHandler(args.connection, context),
-    ]
+    handlers = [ConnectHTTPHandler(args.connection), ConnectHTTPSHandler(args.connection, context)]
     handlers.append(urllib.request.ProxyHandler({}))
     if plan is not None:
         proxy_auth = _proxy_auth(args, plan, transfer.target)

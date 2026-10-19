@@ -196,9 +196,14 @@ documents them.
     slower transfer with exit 28. `--anyauth` sends no credentials until the
     server's 401 says which (Digest, else Basic). `--request-target` replaces
     the first request's target (`*` for `OPTIONS`). `--crlfile` checks the
-    server's chain against a PEM list (revoked: 60); `--pinnedpubkey
-    sha256//BASE64[;...]` or a public-key file requires the server's key (exit
-    90), checked even with `-k`.
+    server's chain against the CRLs in a PEM file (revoked: 60; a file with no
+    CRL is exit 82) and trusts nothing else in it: a certificate there is not
+    an anchor. `--pinnedpubkey sha256//BASE64[;...]` or a public-key file
+    requires the server's key (exit 90), checked even with `-k`, on a
+    connection reopened after a proxy's 407 and over `--unix-socket`; a key
+    file is read at the handshake, so an `http://` transfer never reads it.
+    The contexts curlike builds do not apply the strict X.509 checks Python
+    3.13 added, as curl does not.
   - **Name resolution by netimps** (`pip install 'netimps>=0.4.1'`; without it,
     or with an older one, these flags are refused, exit 2): `--dns-servers IP[:PORT],...` asks those
     nameservers (UDP, TCP when truncated), `--dns-ipv4-addr` /
@@ -211,7 +216,9 @@ documents them.
   - **Connections**: `-4`/`-6`, `--resolve HOST:PORT:ADDR` and `--connect-to
     HOST1:PORT1:HOST2:PORT2` steer only name resolution, so the `Host` header,
     TLS name and certificate check stay the URL's; `--unix-socket PATH` needs a
-    Python with `AF_UNIX` (not Windows CPython), else it is refused.
+    Python with `AF_UNIX` (not Windows CPython), else it is refused. A CONNECT
+    carries one `Host` line. A SOCKS5 user name or password over 255 bytes, or
+    a host name over 255 bytes the proxy is to resolve, is exit 97.
   - **Exit codes are curl's**, checked against real curl by the
     project's parity tests (same command, same fake servers; skipped
     without a curl). An HTTP status is a response, printed and exit 0 (a 404, a

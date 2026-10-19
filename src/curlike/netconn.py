@@ -1,13 +1,11 @@
-"""Where connections go: ``-4`` / ``-6``, ``--resolve``, ``--connect-to``
-and ``--unix-socket``.
+"""Name resolution: ``-4`` / ``-6``, ``--resolve``, ``--connect-to`` and the
+DNS flags (``--dns-servers``, ``--doh-url``, ...).
 
-The first three steer name resolution only -- the transfer's connections
-look names up through :func:`make_resolver`, nothing process-wide is
-patched -- so the request keeps the host the caller named: its ``Host`` header, TLS server name and certificate check are
-the URL's, as in curl. ``--unix-socket`` replaces the TCP connection with one
-to a Unix domain socket (the Docker API's ``/var/run/docker.sock``)."""
+A transfer's connections look names up through :func:`make_resolver`, nothing
+process-wide is patched, so the request keeps the host the caller named: its
+``Host`` header, TLS server name and certificate check are the URL's, as in
+curl."""
 
-import http.client
 import ipaddress
 import re
 import socket
@@ -174,35 +172,3 @@ def make_resolver(family=0, resolve=(), connect_to=(), dns=None):
         return real(name, number, wanted, type, proto, flags)
 
     return getaddrinfo
-
-
-def unix_socket_handlers(path, context):
-    """urllib handlers whose connections go to the Unix socket ``path``
-    (TLS on top for https, with the URL's host as the server name)."""
-    if not hasattr(socket, 'AF_UNIX'):
-        raise NotImplementedError('--unix-socket: this Python has no AF_UNIX sockets')
-
-    def _unix(self):
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        if self.timeout is not None and self.timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
-            sock.settimeout(self.timeout)
-        sock.connect(path)
-        return sock
-
-    class UnixHTTPConnection(http.client.HTTPConnection):
-        def connect(self):
-            self.sock = _unix(self)
-
-    class UnixHTTPSConnection(http.client.HTTPSConnection):
-        def connect(self):
-            self.sock = self._context.wrap_socket(_unix(self), server_hostname=self.host)
-
-    class UnixHTTPHandler(urllib.request.HTTPHandler):
-        def http_open(self, req):
-            return self.do_open(UnixHTTPConnection, req)
-
-    class UnixHTTPSHandler(urllib.request.HTTPSHandler):
-        def https_open(self, req):
-            return self.do_open(UnixHTTPSConnection, req, context=context)
-
-    return [UnixHTTPHandler(), UnixHTTPSHandler(context=context)]
