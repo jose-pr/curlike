@@ -43,7 +43,7 @@ from .errors import (
 )
 from .output import notice_lines
 from .request import has_header
-from .redirects import CurlRedirectHandler
+from .redirects import REDIRECT_CODES, Follow, max_redirs
 from .connector import ConnectHTTPHandler, ConnectHTTPSHandler, ProxyAuth, Socks
 from .routing import AgentProxyHandler, check_proxy_syntax, configured_text, userinfo
 from .routing import plan as proxy_plan
@@ -84,6 +84,8 @@ class Transfer(object):
         self.size_header = 0
         self.size_delivered = 0
         self.connect_status = 0  # the last CONNECT reply's status
+        self.hop_heads = []  # (CONNECT replies, response head) of each redirect hop before the last
+        self.referer = None  # the last hop's Referer when ``-e URL;auto`` set it
 
     def responded(self, response):
         self.first_byte = time.monotonic()
@@ -286,17 +288,21 @@ def build_opener(args, plan, context, transfer, removed):
         handlers.append(urllib.request.HTTPDigestAuthHandler(passwords))
         if args.anyauth:
             handlers.append(urllib.request.HTTPBasicAuthHandler(passwords))
-    if args.location:
-        redirects = CurlRedirectHandler(args, plan)  # curl's rules for what each hop carries
-        if args.max_redirs is not None and args.max_redirs >= 0:
-            # urllib has two limits: distinct URLs (max_redirections) and
-            # repeats of one URL (max_repeats, 4); curl's --max-redirs is both.
-            redirects.max_redirections = args.max_redirs
-            redirects.max_repeats = args.max_redirs
-        handlers.append(redirects)
-    else:
-        handlers.append(NoRedirect())
-    opener = urllib.request.build_opener(*handlers)
+    handlers.append(NoRedirect())  # a 3xx is a response; ``follow`` decides
+    # Only what a transfer needs: urllib's default opener would also fetch
+    # ftp:// and file:// URLs and answer data: URLs.
+    opener = urllib.request.OpenerDirector()
+    for default in (
+        urllib.request.UnknownHandler,
+        urllib.request.HTTPDefaultErrorHandler,
+        urllib.request.HTTPErrorProcessor,
+        urllib.request.HTTPHandler,
+        urllib.request.HTTPSHandler,
+    ):
+        if not any(isinstance(handler, default) for handler in handlers):
+            handlers.append(default())
+    for handler in handlers:
+        opener.add_handler(handler)
     for name in removed:
         # urllib adds these itself; a `-H 'Name:'` removal must reach the wire.
         opener.addheaders = [(k, v) for k, v in opener.addheaders if k.lower() != name]
@@ -513,6 +519,50 @@ def body_error(args, exc, transfer, chunked):
     return fail(args, transfer, EXIT_RECV, 'Recv failure: %s' % exc)
 
 
+class TooManyRedirects(Exception):
+    """``-L`` met a redirect past ``--max-redirs``; ``response`` is that 3xx."""
+
+    def __init__(self, response, status):
+        Exception.__init__(self, status)
+        self.response = response
+        self.status = status
+
+
+def follow(args, opener, req, timeout, transfer):
+    """``(response, status)`` of the last hop: ``req`` sent, and under ``-L``
+    each redirect it meets sent in turn (curl's rules, :mod:`redirects`).
+    The earlier hops' heads are kept on ``transfer`` for ``-D`` / ``-i``."""
+    following = Follow(args, transfer.plan) if args.location or args.location_trusted else None
+    limit = max_redirs(args)
+    seen = 0
+    consumed = 0
+    while True:
+        try:
+            resp = opener.open(req, timeout=timeout)
+            status = resp.getcode()
+            transfer.responded(resp)
+        except urllib.error.HTTPError as exc:
+            # An HTTP status is a response, not a transport error: curl
+            # prints it and exits 0 -- unless -f, which is exit 22.
+            resp, status = exc, exc.code
+            transfer.responded(getattr(exc, 'fp', None))
+        previous = transfer.sent[-1][0] if transfer.sent else transfer.target
+        args.learn_cookies(previous, list(resp.headers.items()) if resp.headers else [])
+        location = resp.headers.get('Location') if resp.headers else None
+        if following is None or status not in REDIRECT_CODES or not location:
+            return resp, status
+        if limit is not None and seen >= limit:
+            raise TooManyRedirects(resp, status)
+        replies = args.connection.connect_replies
+        head = format_response_headers(status, getattr(resp, 'reason', ''), list(resp.headers.items()))
+        transfer.hop_heads.append((b''.join(replies[consumed:]), head))
+        consumed = len(replies)
+        resp.close()
+        req = following.next_request(req, previous, status, location)
+        transfer.referer = following.referer
+        seen += 1
+
+
 def exchange(args, opener, req, timeout, url, transfer, may_retry=False):
     """Send ``req``, write what curl writes and return curl's exit code;
     ``transfer`` records the outcome for ``-w``. Raises :class:`Retry`
@@ -524,26 +574,16 @@ def exchange(args, opener, req, timeout, url, transfer, may_retry=False):
     (:func:`reply_error`); the body is read last (:func:`body_error`)."""
     transfer.started = time.monotonic()
     try:
-        resp = opener.open(req, timeout=timeout)
-        transfer.responded(resp)
-        status = resp.getcode()
-    except urllib.error.HTTPError as exc:
-        # An HTTP status is a response, not a transport error: curl prints it
-        # and exits 0 -- unless -f, which is exit 22.
-        resp = exc
-        transfer.responded(getattr(exc, 'fp', None))
-        status = exc.code
-        if args.location and 'infinite loop' in str(getattr(exc, 'reason', '') or ''):
-            # urllib's redirect handler gave up (--max-redirs, or a loop):
-            # curl's "(47) Maximum (N) redirects followed".
-            transfer.status = status
-            transfer.header_items = list(exc.headers.items()) if exc.headers else []
-            if may_retry and args.retry_all_errors:
-                raise Retry(' (retrying all errors)')
-            limit = (
-                args.max_redirs if args.max_redirs is not None else urllib.request.HTTPRedirectHandler.max_redirections
-            )
-            return fail(args, transfer, EXIT_REDIRECTS, 'Maximum (%d) redirects followed' % limit)
+        resp, status = follow(args, opener, req, timeout, transfer)
+    except TooManyRedirects as exc:
+        # curl's "(47) Maximum (N) redirects followed"; the 3xx it stopped at
+        # is the response -w reports.
+        transfer.status = exc.status
+        transfer.header_items = list(exc.response.headers.items()) if exc.response.headers else []
+        exc.response.close()
+        if may_retry and args.retry_all_errors:
+            raise Retry(' (retrying all errors)')
+        return fail(args, transfer, EXIT_REDIRECTS, 'Maximum (%d) redirects followed' % max_redirs(args))
     except NotImplementedError:
         raise
     except LocalError as exc:
@@ -573,7 +613,7 @@ def exchange(args, opener, req, timeout, url, transfer, may_retry=False):
 
     if args.verbose and not args.silent:
         print('Response status: %s' % status, file=sys.stderr)
-    args.save_cookies(url, header_items)
+    args.save_cookie_jar()
     if args.compressed and not args.head and cut is None:
         try:
             content = decode_body(content, header_items)
@@ -581,9 +621,13 @@ def exchange(args, opener, req, timeout, url, transfer, may_retry=False):
             return fail(args, transfer, EXIT_BAD_ENCODING, str(exc))
     header_bytes = format_response_headers(status, reason, header_items)
     transfer.size_header = len(header_bytes) + sum(len(r) for r in args.connection.connect_replies)
-    if not args.suppress_connect_headers:
-        # curl shows the proxy's CONNECT reply before the response's own headers.
-        header_bytes = b''.join(args.connection.connect_replies) + header_bytes
+    # curl shows each hop's head, the proxy's CONNECT reply before its own.
+    shown = [] if args.suppress_connect_headers else list(args.connection.connect_replies)
+    earlier = b''
+    for replies, head in transfer.hop_heads:
+        earlier += (b'' if args.suppress_connect_headers else replies) + head
+    taken = sum(len(replies) for replies, _ in transfer.hop_heads)
+    header_bytes = earlier + b''.join(shown)[taken:] + header_bytes
     try:
         outcome = args.download_outcome(status, header_items)
     except LocalError as exc:
@@ -722,8 +766,9 @@ def run(args):
         method = args.request_method(data is not None, upload is not None)
         if method == 'HEAD':
             data = None
+        args.cookie_managed = not has_header(headers, 'cookie')  # else -H Cookie is the whole header
         cookie_header = args.cookie_header(url)
-        if cookie_header and not has_header(headers, 'cookie'):
+        if cookie_header and args.cookie_managed:
             headers['Cookie'] = cookie_header
         proxy = args.effective_proxy()
         if not proxy and args.preproxy and Socks.is_socks(args.preproxy):

@@ -335,6 +335,16 @@ class RequestArgs(Group):
             return 'PUT'
         return 'POST' if has_body else 'GET'
 
+    def referer_url(self):
+        """The ``-e`` URL; ``URL;auto`` also sets every redirect hop's Referer
+        to the page it came from (see :meth:`referer_auto`)."""
+        text = self.referer or ''
+        return text[: -len(';auto')] if text.endswith(';auto') else text
+
+    def referer_auto(self):
+        """Whether ``-e`` ends in ``;auto``."""
+        return (self.referer or '').endswith(';auto')
+
     def request_headers(self):
         """``(headers, removed)``. The implied headers first -- User-Agent,
         the ``Authorization`` the auth options imply (``AuthArgs``), -e's
@@ -346,8 +356,9 @@ class RequestArgs(Group):
         authorization = self.authorization()
         if authorization:
             headers['Authorization'] = authorization
-        if self.referer:
-            headers['Referer'] = self.referer
+        referer = self.referer_url()
+        if referer:
+            headers['Referer'] = referer
         if self.compressed:
             headers['Accept-Encoding'] = 'gzip, deflate'
         if self.range:

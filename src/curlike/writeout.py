@@ -199,7 +199,11 @@ def write_out_values(args, transfer, exitcode):
         'conn_id': 0,
         'xfer_id': 0,
     }
-    texts = {'remote_ip': remote[0], 'local_ip': local[0], 'referer': args.referer or ''}
+    texts = {
+        'remote_ip': remote[0],
+        'local_ip': local[0],
+        'referer': transfer.referer if transfer.referer is not None else args.referer_url(),
+    }
     texts.update(_url_parts('url', typed))
     texts.update(_url_parts('urle', effective))
     values = {name: '%.6f' % value for name, value in times.items()}

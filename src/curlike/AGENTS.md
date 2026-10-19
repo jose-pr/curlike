@@ -121,12 +121,22 @@ documents them.
   exit 2, and a broken one is curl's exit 3. A URL with no scheme is
   `http://`, as in curl; an option value may start with `-` (`-z -DATE`, `-d
   -1`), as in curl. With curl's meaning where it matters:
-  - **`-L` follows as curl does**: credentials (`Authorization` from `-u`,
-    `--oauth2-bearer` or `-H`; `Cookie` from `-H` or a `-b` string) go to the
-    next hop only while scheme, host and port stay the same, unless
-    `--location-trusted`; a `-b` file's cookies are re-chosen per hop; 301/302
-    turn a POST into a GET (`--post301`/`--post302` keep it), 303 anything but
-    HEAD, 307/308 keep method and body, and `-X` stays forced.
+  - **`-L` follows as curl does**, in its own loop: at most 50 redirects
+    (`--max-redirs N`; `-1` unlimited, `0` refuses the first), then exit 47;
+    credentials (`Authorization` from `-u`, `--oauth2-bearer` or `-H`;
+    `Cookie` from `-H` or a `-b` string) go to a hop only while its scheme,
+    host and port are the first request's, unless `--location-trusted` (which
+    also implies `-L`), and a `-H 'Host:'` only to the first request's host;
+    the cookie engine (`-b FILE`, `-c`) keeps what each hop sets and sends it
+    to the next hop it applies to, and `-c` files a cookie under the host of
+    the hop that set it; `-D` and `-i` show every hop's headers; `-e
+    'URL;auto'` sets each later hop's Referer to the page it came from;
+    301/302 turn a POST into a GET (`--post301`/`--post302` keep it), 303
+    anything but HEAD, 307/308 keep method and body, and `-X` stays forced. A
+    redirect to a scheme this command cannot fetch (`ftp://`, `ftps://`) is
+    exit 1 (`Protocol "ftp" not supported or disabled in libcurl`); one that
+    `--proto-redir` forbids (`file://`, `gopher://` by default) is exit 1
+    too.
   - **Credentials**: `-u` wins, then `user:pw@` in the URL, then the netrc entry
     for the host (`default` if none matches) with `-n`/`--netrc-optional`;
     `--digest` answers the server's challenge. `-n` without a netrc is exit 26.

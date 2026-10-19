@@ -37,36 +37,44 @@ class CookieArgs(Group):
         URL), not a literal string?"""
         return bool(self.cookie) and os.path.exists(self.cookie)
 
-    def cookie_header(self, url):
-        """The ``Cookie:`` value from ``-b``: a string (``a=b; c=d``) as given,
-        or the rows of a Netscape file that apply to ``url`` (domain, path,
-        Secure, expiry -- a jar with several hosts never leaks one host's
-        cookies to another), ``#HttpOnly_`` rows included."""
-        if not self.cookie:
-            return None
-        if os.path.exists(self.cookie):
-            # curl's order: longest path, domain, name first; the newest (later in the file) first.
-            jar = list(enumerate(self._jar()))
-            jar.sort(
+    def cookie_engine(self):
+        """Whether cookies are kept and chosen per URL: ``-b FILE`` or ``-c``
+        turns the engine on, as in curl."""
+        return bool(self.cookie_jar) or self.cookie_from_jar()
+
+    def _rows(self):
+        """The engine's cookies by ``(domain, path, name)``: the -b file's
+        rows, then what responses set during this run."""
+        rows = getattr(self, '_cookie_rows', None)
+        if rows is None:
+            rows = self._cookie_rows = {}
+            if self.cookie_from_jar():
+                for cookie in self._jar():
+                    rows[(cookie.domain, cookie.path, cookie.name)] = cookie
+        return rows
+
+    def cookie_header(self, url, literal=True):
+        """The ``Cookie:`` value for a request to ``url``: the ``-b`` string
+        as given (``literal``), then the engine's cookies that apply (domain,
+        path, Secure, expiry -- a jar with several hosts never leaks one
+        host's cookies to another), in curl's order: longest path, domain,
+        name first; the newest first."""
+        pairs = [self.cookie] if self.cookie and not self.cookie_from_jar() and literal else []
+        if self.cookie_engine():
+            ranked = list(enumerate(self._rows().values()))
+            ranked.sort(
                 key=lambda item: (-len(item[1].path or ''), -len(item[1].domain or ''), -len(item[1].name), -item[0])
             )
-            pairs = ['%s=%s' % (c.name, c.value) for _, c in jar if cookie_applies(c, url)]
-            return '; '.join(pairs) if pairs else None
-        return self.cookie
+            pairs += ['%s=%s' % (c.name, c.value) for _, c in ranked if cookie_applies(c, url)]
+        return '; '.join(pairs) if pairs else None
 
-    def save_cookies(self, url, header_items):
-        """``-c``: the response's cookies in Netscape format -- the domain
-        defaulting to the host of the URL the CALLER asked for, never a
-        gateway's -- on top of what a ``-b <file>`` read; a cookie replaces one
-        of the same domain, path and name, and one the server expires is
-        dropped. The final response's headers only: urllib does not hand back
-        the intermediate hops' cookies."""
-        if not self.cookie_jar:
+    def learn_cookies(self, url, header_items):
+        """The ``Set-Cookie`` headers of the response to ``url`` (as the
+        caller named it), into the engine: a cookie replaces one of the same
+        domain, path and name, and one the server expires is dropped."""
+        if not self.cookie_engine():
             return
-        rows = {}
-        if self.cookie and os.path.exists(self.cookie):
-            for cookie in self._jar():
-                rows[(cookie.domain, cookie.path, cookie.name)] = cookie
+        rows = self._rows()
         values = [v for k, v in header_items if k.lower() == 'set-cookie']
         for cookie, gone in set_cookie_specs(values, urllib.parse.urlsplit(url).hostname or ''):
             key = (cookie.domain, cookie.path, cookie.name)
@@ -74,4 +82,8 @@ class CookieArgs(Group):
                 rows.pop(key, None)
             else:
                 rows[key] = cookie
-        save_netscape(rows.values(), Path(self.cookie_jar))
+
+    def save_cookie_jar(self):
+        """``-c``: the engine's cookies in Netscape format."""
+        if self.cookie_jar:
+            save_netscape(self._rows().values(), Path(self.cookie_jar))
