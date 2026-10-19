@@ -336,6 +336,19 @@ def _digest_proxy(offer_basic=False):
     return handle
 
 
+def _digest_origin(challenge='Digest realm="proxy", nonce="n0nce", qop="auth", algorithm=MD5'):
+    """An origin that answers 200 "welcome" to Digest credentials agent /
+    s3cret and 401 "denied" with ``challenge`` to anything else."""
+
+    def handle(conn, head):
+        method = head.split(b" ", 1)[0].decode()
+        if _digest_ok(_header(head, "Authorization"), method):
+            return _respond(conn, "200 OK", b"welcome")
+        _respond(conn, "401 Unauthorized", b"denied", ["WWW-Authenticate: " + challenge])
+
+    return handle
+
+
 def _proxy(require=BASIC, connect_status=None, plain_status=None, drop_connect=False, header="Proxy-Authorization"):
     """A forward proxy: ``require`` is the Proxy-Authorization it wants (407
     otherwise) in ``header``; ``connect_status`` answers every CONNECT, ``drop_connect``
@@ -376,7 +389,7 @@ class _Servers(object):
     def serve(self, handler, tls=None):
         listener = socket.socket()
         listener.bind(("127.0.0.1", 0))
-        listener.listen(50)
+        listener.listen(128)
         self.sockets.append(listener)
 
         def one(conn):
@@ -485,6 +498,9 @@ def world(request, tmp_path_factory):
             ("digest_proxy", _digest_proxy()),
             ("digest_or_basic_proxy", _digest_proxy(offer_basic=True)),
             ("echo", _echo),
+            ("digest_origin", _digest_origin()),
+            ("basic_origin", _digest_origin('Basic realm="x"')),
+            ("negotiate_origin", _digest_origin("Negotiate")),
             ("redirector", _redirector),
             ("header_proxy", _header_proxy),
             ("stalls", _stalls),
@@ -705,6 +721,99 @@ SCENARIOS = [
     (
         "-w referer with ;auto",
         lambda w: ["-L", "-e", ";auto", "-o", os.devnull, "-w", "[%{referer}]", w["redirector"] + "/chain/2"],
+        {},
+        False,
+        {},
+    ),
+    # Digest: the server's 401 answered once.
+    ("--digest", lambda w: ["--digest", "-u", "agent:s3cret", w["digest_origin"] + "/d"], {}, False, {}),
+    ("--digest, rejected", lambda w: ["--digest", "-u", "agent:bad", w["digest_origin"] + "/d"], {}, False, {}),
+    ("--digest, Basic only", lambda w: ["--digest", "-u", "agent:s3cret", w["basic_origin"] + "/d"], {}, False, {}),
+    (
+        "--digest, Negotiate only",
+        lambda w: ["--digest", "-u", "agent:s3cret", w["negotiate_origin"] + "/d"],
+        {},
+        False,
+        {},
+    ),
+    ("--anyauth, Basic only", lambda w: ["--anyauth", "-u", "agent:s3cret", w["basic_origin"] + "/d"], {}, False, {}),
+    ("--anyauth, Digest", lambda w: ["--anyauth", "-u", "agent:s3cret", w["digest_origin"] + "/d"], {}, False, {}),
+    (
+        "--digest -w",
+        lambda w: ["--digest", "-u", "agent:bad", "-w", "[%{http_code} %{num_redirects}]", w["digest_origin"] + "/d"],
+        {},
+        False,
+        {},
+    ),
+    # netrc: what a file holds and which entry is chosen.
+    (
+        "netrc, a quoted password",
+        lambda w: ["--netrc-file", _netrc(w, 'machine 127.0.0.1 login u password "a\\"b c"\n'), w["echo"] + "/n"],
+        {},
+        False,
+        {},
+    ),
+    (
+        "netrc, a comment line",
+        lambda w: [
+            "--netrc-file",
+            _netrc(w, "#machine 127.0.0.1 login c password c\nmachine 127.0.0.1 login u password p # note\n"),
+            w["echo"] + "/n",
+        ],
+        {},
+        False,
+        {},
+    ),
+    (
+        "netrc, a hash inside a token",
+        lambda w: ["--netrc-file", _netrc(w, "machine 127.0.0.1 login u password pw#x\n"), w["echo"] + "/n"],
+        {},
+        False,
+        {},
+    ),
+    (
+        "netrc, a login with no password",
+        lambda w: ["--netrc-file", _netrc(w, "machine 127.0.0.1 login u\n"), w["echo"] + "/n"],
+        {},
+        False,
+        {},
+    ),
+    (
+        "netrc, the login the URL names",
+        lambda w: [
+            "--netrc-file",
+            _netrc(w, "machine 127.0.0.1 login alice password a\nmachine 127.0.0.1 login bob password b\n"),
+            w["echo"].replace("127.0.0.1", "bob@127.0.0.1") + "/n",
+        ],
+        {},
+        False,
+        {},
+    ),
+    (
+        "netrc, a machine name in another case",
+        lambda w: [
+            "--netrc-file",
+            _netrc(w, "machine LOCALHOST login u password p\n"),
+            _localhost(w, "echo"),
+        ],
+        {},
+        False,
+        {},
+    ),
+    (
+        "netrc, default before the machine",
+        lambda w: [
+            "--netrc-file",
+            _netrc(w, "default login d password p\nmachine 127.0.0.1 login m password q\n"),
+            w["echo"] + "/n",
+        ],
+        {},
+        False,
+        {},
+    ),
+    (
+        "netrc, no entry for the host",
+        lambda w: ["--netrc-file", _netrc(w, "machine other.test login u password p\n"), w["echo"] + "/n"],
         {},
         False,
         {},
@@ -1400,6 +1509,15 @@ def _localhost(world, name):
 def _write(world, name, text):
     path = world["tmp"] / name
     path.write_text(text, encoding="ascii")
+    return str(path)
+
+
+def _netrc(world, text):
+    """A netrc file holding ``text``, for one run."""
+    import uuid
+
+    path = world["tmp"] / ("netrc-%s" % uuid.uuid4().hex[:8])
+    path.write_text(text)
     return str(path)
 
 

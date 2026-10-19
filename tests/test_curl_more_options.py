@@ -356,3 +356,26 @@ def test_short_aliases_of_refused_flags_are_refused_in_one_line(short, long, tmp
     argv = [short, "x"] if short in ("-K", "-Q") else [short]
     rc, out = _run(monkeypatch, capsysbinary, tmp_path, ["-s", *argv, "http://127.0.0.1:1/"])
     assert rc == 2 and out.err.strip() == ("curl: (2) Unsupported options: %s" % long).encode()
+
+
+def test_u_without_a_password_asks_for_it_once(files, tmp_path, monkeypatch, capsysbinary):
+    import getpass
+
+    asked = []
+    monkeypatch.setattr(getpass, "getpass", lambda prompt="": asked.append(prompt) or "secret")
+    rc, out = _run(monkeypatch, capsysbinary, tmp_path, ["-s", "-u", "alice", files + "/echo"])
+    assert rc == 0 and _echo_user(out) == "alice:secret"
+    assert asked == ["Enter host password for user 'alice':"]
+    rc, out = _run(monkeypatch, capsysbinary, tmp_path, ["-s", "-u", "alice:given", files + "/echo"])
+    assert _echo_user(out) == "alice:given" and len(asked) == 1, "a password on the command line is not asked for"
+
+
+def test_u_without_a_password_and_nothing_to_read_is_an_empty_one(files, tmp_path, monkeypatch, capsysbinary):
+    import getpass
+
+    def eof(prompt=""):
+        raise EOFError
+
+    monkeypatch.setattr(getpass, "getpass", eof)
+    rc, out = _run(monkeypatch, capsysbinary, tmp_path, ["-s", "-u", "alice", files + "/echo"])
+    assert rc == 0 and _echo_user(out) == "alice:"
