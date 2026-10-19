@@ -2,7 +2,6 @@
 options, run it -- again, under ``--retry`` -- and answer as curl does:
 the same output, the same one-line errors, the same exit codes."""
 
-import gzip
 import http.client
 import re
 import socket
@@ -19,6 +18,7 @@ from syshttp.retry import retry_after
 from .body import FORM_CONTENT_TYPE
 from .download import EXIT_FILESIZE
 from .connection import MAX_RETRY_SLEEP
+from .delivery import BodyReader, Decoder, EncodingError, TooSlow
 from .errors import (
     EXIT_CONNECT,
     EXIT_EMPTY_REPLY,
@@ -43,6 +43,7 @@ from .errors import (
 )
 from .output import notice_lines
 from .request import has_header
+from .response import ResponseRefused
 from .redirects import REDIRECT_CODES, Follow, max_redirs, origin
 from .challenge import ChallengeAuth, ChallengeHandler
 from .connector import ConnectHTTPHandler, ConnectHTTPSHandler, Socks
@@ -105,7 +106,7 @@ class RequestLog(urllib.request.BaseHandler):
     def _record(self, req):
         self.transfer.final_start = time.monotonic()
         data = req.data
-        size = len(data) if isinstance(data, (bytes, bytearray)) else 0
+        size = len(data) if data is not None else 0
         self.transfer.sent.append((req.full_url, req.get_method(), size))
         return req
 
@@ -131,10 +132,6 @@ class RequestTarget(urllib.request.BaseHandler):
 
     http_request = _apply
     https_request = _apply
-
-
-class TooSlow(Exception):
-    """--speed-limit / --speed-time: the transfer stayed too slow."""
 
 
 class Pace(object):
@@ -175,10 +172,21 @@ class PacedBody(object):
         self.data = data
         self.rate = rate
 
+    def __len__(self):
+        return len(self.data)
+
+    def _pieces(self):
+        if isinstance(self.data, (bytes, bytearray)):
+            for offset in range(0, len(self.data), self.PIECE):
+                yield self.data[offset : offset + self.PIECE]
+        else:
+            for piece in self.data:
+                for offset in range(0, len(piece), self.PIECE):
+                    yield piece[offset : offset + self.PIECE]
+
     def __iter__(self):
         pace = Pace(self.rate)
-        for offset in range(0, len(self.data), self.PIECE):
-            piece = self.data[offset : offset + self.PIECE]
+        for piece in self._pieces():
             yield piece
             pace(len(piece))
 
@@ -194,44 +202,6 @@ def format_response_headers(status, reason, header_items):
     status_line = ('HTTP/1.1 %s %s' % (status, reason or '')).rstrip()
     header_text = ''.join('%s: %s\r\n' % (k, v) for k, v in header_items)
     return ('%s\r\n%s\r\n' % (status_line, header_text)).encode('utf-8')
-
-
-class EncodingError(Exception):
-    """A ``Content-Encoding`` ``--compressed`` cannot undo: curl's 61."""
-
-
-def decode_body(content, header_items):
-    """``--compressed``: the body decoded per ``Content-Encoding`` (gzip,
-    deflate -- zlib-wrapped or raw -- each layer in turn; ``identity`` is
-    none). An encoding it does not know, or data that does not decode,
-    raises :class:`EncodingError`, as curl fails with 61."""
-    import zlib
-
-    encodings = []
-    for name, value in header_items:
-        if name.lower() == 'content-encoding':
-            encodings += [e.strip().lower() for e in value.split(',') if e.strip()]
-    for encoding in reversed(encodings):  # the last applied is undone first
-        try:
-            if encoding in ('gzip', 'x-gzip'):
-                content = gzip.decompress(content)
-            elif encoding == 'deflate':
-                try:
-                    content = zlib.decompress(content)
-                except zlib.error:
-                    content = zlib.decompress(content, -zlib.MAX_WBITS)
-            elif encoding != 'identity':
-                raise EncodingError('Unrecognized content encoding type')
-        except (OSError, EOFError, zlib.error) as exc:
-            raise EncodingError('Error while processing content unencoding: %s' % exc)
-    return content
-
-
-#: curl's limits on a response's headers: one header's size (100 KB, beyond
-#: which it fails with 100); http.client's own -- 100 headers, 64 KB a line --
-#: are lifted to it for the transfer, since curl takes any number of headers.
-MAX_HEADER_LINE = 100 * 1024
-MAX_HEADERS = 1 << 20
 
 
 def _header_defect(response):
@@ -307,12 +277,17 @@ def build_opener(args, plan, context, transfer, removed):
     return opener
 
 
-def fail(args, transfer, code, message):
+def say(args, transfer, code, message):
     """curl's one line, ``curl: (N) message`` (unless -s without -S); the
-    message is ``%{errormsg}``. Returns ``code``."""
+    message is ``%{errormsg}``. Every attempt of a retried transfer has its own."""
     transfer.errormsg = message
     if args.should_print_error():
         print('curl: (%d) %s' % (code, message), file=sys.stderr)
+
+
+def fail(args, transfer, code, message):
+    """:func:`say`, and ``code`` back."""
+    say(args, transfer, code, message)
     return code
 
 
@@ -407,6 +382,7 @@ def transport_error(args, reason, transfer, may_retry):
         code, message = EXIT_SEND, 'Send failure: %s' % text
     why = args.retry_reason_for_error(code, reason)
     if may_retry and why:
+        say(args, transfer, code, message)
         raise Retry(why)
     return fail(args, transfer, code, message)
 
@@ -415,9 +391,11 @@ def reply_error(args, exc, transfer, may_retry):
     """A failure reading the response's status line and headers: 52 nothing
     came back, 1 not HTTP at all (curl's "HTTP/0.9") or an unusable status
     line, 8 an unreadable reply, 56 the connection broke, 28 timed out."""
-    if isinstance(exc, http.client.RemoteDisconnected):
+    if isinstance(exc, ResponseRefused):
+        code, message = exc.code, exc.text
+    elif isinstance(exc, http.client.RemoteDisconnected):
         code, message = EXIT_EMPTY_REPLY, 'Empty reply from server'
-    elif isinstance(exc, http.client.LineTooLong) or str(exc).startswith('got more than'):
+    elif isinstance(exc, http.client.LineTooLong):
         code, message = 100, 'A value or data field grew larger than allowed'
     elif isinstance(exc, http.client.BadStatusLine):
         line = str(exc.args[0]) if exc.args else ''
@@ -437,6 +415,7 @@ def reply_error(args, exc, transfer, may_retry):
         code, message = EXIT_RECV, 'Recv failure: %s' % exc
     why = args.retry_reason_for_error(code, exc)
     if may_retry and why:
+        say(args, transfer, code, message)
         raise Retry(why)
     return fail(args, transfer, code, message)
 
@@ -454,73 +433,45 @@ def _bad_chunk(exc):
     return False
 
 
-def read_body(response, pace=None, ignore_length=False):
-    """``(body, error)``: the body as far as it came, and the exception that
-    cut it short -- an ``IncompleteRead`` for a body shorter than its
-    Content-Length or a broken chunked encoding, else the socket's error --
-    or ``None``. Read in pieces, so a reset keeps what arrived (curl writes
-    it before failing)."""
+def response_socket(response):
+    """The socket a response is read from, or ``None``."""
     raw = response.fp if isinstance(response, urllib.error.HTTPError) else response
-    if raw is None:
-        return b'', None
-    if ignore_length and getattr(raw, 'length', None) is not None:
-        raw.length = None  # --ignore-content-length: read until the server closes
-    parts = []
-    # read1: what has arrived, without waiting for a full buffer -- a plain
-    # read() loses the bytes it buffered when the connection resets.
-    read = getattr(raw, 'read1', raw.read)
-    try:
-        while True:
-            chunk = read(65536)
-            if not chunk:
-                break
-            parts.append(chunk)
-            if pace is not None:
-                pace(len(chunk))
-    except TooSlow as exc:
-        return b''.join(parts), exc
-    except http.client.IncompleteRead as exc:
-        parts.append(exc.partial or b'')
-        return b''.join(parts), exc
-    except (OSError, http.client.HTTPException) as exc:
-        return b''.join(parts), exc
-    missing = getattr(raw, 'length', None)
-    if missing:
-        # read(amt) returns b'' at EOF however much Content-Length promised.
-        return b''.join(parts), http.client.IncompleteRead(b'', missing)
-    return b''.join(parts), None
+    return getattr(getattr(getattr(raw, 'fp', None), 'raw', None), '_sock', None)
 
 
-def body_error(args, exc, transfer, chunked):
+def body_error(args, exc, transfer, chunked, may_retry=False):
     """curl's exit for a body cut short: 18 a body shorter than promised,
-    56 a malformed chunk or a broken connection, 28 timed out or too slow."""
+    56 a malformed chunk or a broken connection, 28 timed out or too slow;
+    :class:`Retry` when ``--retry`` covers it."""
+    code, message = body_failure(args, exc, transfer, chunked)
+    why = args.retry_reason_for_error(code, exc)
+    if may_retry and why:
+        say(args, transfer, code, message)
+        raise Retry(why)
+    return fail(args, transfer, code, message)
+
+
+def body_failure(args, exc, transfer, chunked):
+    """``(exit code, message)`` for a body cut short by ``exc``."""
     if isinstance(exc, TooSlow):
-        return fail(args, transfer, EXIT_TIMEOUT, str(exc))
+        return EXIT_TIMEOUT, str(exc)
     low = args.low_speed()
     if low and isinstance(exc, (socket.timeout, TimeoutError)):
-        return fail(
-            args,
-            transfer,
-            EXIT_TIMEOUT,
-            'Operation too slow. Less than %d bytes/sec transferred the last %d seconds' % low,
-        )
+        return EXIT_TIMEOUT, 'Operation too slow. Less than %d bytes/sec transferred the last %d seconds' % low
     if isinstance(exc, http.client.IncompleteRead):
         if chunked and _bad_chunk(exc):
-            return fail(args, transfer, EXIT_RECV, 'chunk hex-length char not a hex digit')
+            return EXIT_RECV, 'chunk hex-length char not a hex digit'
         if chunked:
-            return fail(args, transfer, EXIT_PARTIAL, 'transfer closed with outstanding read data remaining')
-        return fail(args, transfer, EXIT_PARTIAL, 'end of response with %d bytes missing' % (exc.expected or 0))
+            return EXIT_PARTIAL, 'transfer closed with outstanding read data remaining'
+        return EXIT_PARTIAL, 'end of response with %d bytes missing' % (exc.expected or 0)
     if isinstance(exc, (socket.timeout, TimeoutError)):
-        return fail(
-            args,
-            transfer,
-            EXIT_TIMEOUT,
-            'Operation timed out after %d milliseconds with %d bytes received'
-            % (_elapsed_ms(transfer), transfer.size_download),
+        return EXIT_TIMEOUT, 'Operation timed out after %d milliseconds with %d bytes received' % (
+            _elapsed_ms(transfer),
+            transfer.size_download,
         )
     if isinstance(exc, ConnectionResetError):
-        return fail(args, transfer, EXIT_RECV, 'Recv failure: Connection reset by peer')
-    return fail(args, transfer, EXIT_RECV, 'Recv failure: %s' % exc)
+        return EXIT_RECV, 'Recv failure: Connection reset by peer'
+    return EXIT_RECV, 'Recv failure: %s' % exc
 
 
 class TooManyRedirects(Exception):
@@ -532,7 +483,7 @@ class TooManyRedirects(Exception):
         self.status = status
 
 
-def follow(args, opener, req, timeout, transfer):
+def follow(args, opener, req, transfer):
     """``(response, status)`` of the last hop: ``req`` sent, and under ``-L``
     each redirect it meets sent in turn (curl's rules, :mod:`redirects`).
     The earlier hops' heads are kept on ``transfer`` for ``-D`` / ``-i``."""
@@ -542,7 +493,7 @@ def follow(args, opener, req, timeout, transfer):
     consumed = 0
     while True:
         try:
-            resp = opener.open(req, timeout=timeout)
+            resp = opener.open(req, timeout=args.connect_limit())
             status = resp.getcode()
             transfer.responded(resp)
         except urllib.error.HTTPError as exc:
@@ -567,7 +518,7 @@ def follow(args, opener, req, timeout, transfer):
         seen += 1
 
 
-def exchange(args, opener, req, timeout, url, transfer, may_retry=False):
+def exchange(args, opener, req, url, transfer, may_retry=False):
     """Send ``req``, write what curl writes and return curl's exit code;
     ``transfer`` records the outcome for ``-w``. Raises :class:`Retry`
     instead of answering when ``may_retry`` and the failure is transient.
@@ -578,7 +529,7 @@ def exchange(args, opener, req, timeout, url, transfer, may_retry=False):
     (:func:`reply_error`); the body is read last (:func:`body_error`)."""
     transfer.started = time.monotonic()
     try:
-        resp, status = follow(args, opener, req, timeout, transfer)
+        resp, status = follow(args, opener, req, transfer)
     except TooManyRedirects as exc:
         # curl's "(47) Maximum (N) redirects followed"; the 3xx it stopped at
         # is the response -w reports.
@@ -586,7 +537,7 @@ def exchange(args, opener, req, timeout, url, transfer, may_retry=False):
         transfer.header_items = list(exc.response.headers.items()) if exc.response.headers else []
         exc.response.close()
         if may_retry and args.retry_all_errors:
-            raise Retry(' (retrying all errors)')
+            raise Retry('(retrying all errors)')
         return fail(args, transfer, EXIT_REDIRECTS, 'Maximum (%d) redirects followed' % max_redirs(args))
     except NotImplementedError:
         raise
@@ -606,23 +557,35 @@ def exchange(args, opener, req, timeout, url, transfer, may_retry=False):
     if not args.head and args.too_big(header_items):
         resp.close()
         return fail(args, transfer, EXIT_FILESIZE, 'Maximum file size exceeded')
-    pace = Pace(args.rate(), args.low_speed()) if args.limit_rate or args.low_speed() else None
-    content, cut = (b'', None) if args.head else read_body(resp, pace, args.ignore_content_length)
-    transfer.size_download = len(content)  # as it came over the wire, before --compressed
-    if cut is None and args.too_big(header_items, len(content)):
-        return fail(args, transfer, EXIT_FILESIZE, 'Maximum file size exceeded')
     why = args.retry_reason_for_status(status)
     if may_retry and why:
-        raise Retry(why, after=retry_after(header_items))
+        after = retry_after(header_items)
+        if args.retry_after_too_late(after):
+            if not args.silent:
+                print(
+                    '\n'.join(
+                        notice_lines(
+                            'The Retry-After: time would make this command line exceed the maximum '
+                            'allowed time for retries.',
+                            prefix='Warning: ',
+                        )
+                    ),
+                    file=sys.stderr,
+                )
+        else:
+            resp.close()
+            if args.fails_on(status):
+                say(args, transfer, EXIT_HTTP, 'The requested URL returned error: %s' % status)
+            raise Retry(why, after=after)
 
     if args.verbose and not args.silent:
         print('Response status: %s' % status, file=sys.stderr)
     args.save_cookie_jar()
-    if args.compressed and not args.head and cut is None:
-        try:
-            content = decode_body(content, header_items)
-        except EncodingError as exc:
-            return fail(args, transfer, EXIT_BAD_ENCODING, str(exc))
+    try:
+        decoder = Decoder(header_items) if args.compressed and not args.head else None
+    except EncodingError as exc:
+        resp.close()
+        return fail(args, transfer, EXIT_BAD_ENCODING, str(exc))
     header_bytes = format_response_headers(status, reason, header_items)
     transfer.size_header = len(header_bytes) + sum(len(r) for r in args.connection.connect_replies)
     # curl shows each hop's head, the proxy's CONNECT reply before its own.
@@ -635,27 +598,22 @@ def exchange(args, opener, req, timeout, url, transfer, may_retry=False):
     try:
         outcome = args.download_outcome(status, header_items)
     except LocalError as exc:
+        resp.close()
         return fail(args, transfer, exc.code, str(exc))
+    sink = None
     try:
         args.write_header_dump(header_bytes)
         if outcome == 'skip':
             # A 304, an unmet -z, a finished resume: no body, no file.
-            transfer.size_download = 0
             return 0
-        if args.fails_on(status):
-            # -f: no body; --fail-with-body: the body, then the same exit 22.
-            if args.fail_with_body:
-                args.emit_output(header_bytes, content)
-            else:
-                transfer.size_download = 0
-            return fail(args, transfer, EXIT_HTTP, 'The requested URL returned error: %s' % status)
-        args.emit_output(header_bytes, content)
-        transfer.size_delivered = len(content)
-        if cut is not None:
-            # What arrived is written, as curl writes it, then the failure.
-            raw = resp.fp if isinstance(resp, urllib.error.HTTPError) else resp
-            return body_error(args, cut, transfer, getattr(raw, 'chunked', False))
-        args.finish_download(header_items)
+        if args.fails_on(status) and not args.fail_with_body:
+            return fail(args, transfer, EXIT_HTTP, 'The requested URL returned error: %s' % status)  # no body
+        sink = args.body_sink(header_bytes)
+        sink.start()
+        return _deliver(args, resp, status, header_items, transfer, sink, decoder, may_retry)
+    except EncodingError as exc:
+        _flush(sink)
+        return fail(args, transfer, EXIT_BAD_ENCODING, str(exc))
     except WriteFailure as exc:
         # -o / -D not writable, or stdout closed under us: curl's 23, in the
         # words curl has for where the write failed.
@@ -668,6 +626,54 @@ def exchange(args, opener, req, timeout, url, transfer, may_retry=False):
     except OSError as exc:
         # What follows the body (-R, --etag-save) could not be written.
         return fail(args, transfer, EXIT_WRITE, 'Failure writing output to destination: %s' % exc)
+    finally:
+        if sink is not None:
+            sink.release()
+        resp.close()
+
+
+def _flush(sink):
+    """What was delivered before a failure reaches its destination."""
+    if sink is not None:
+        try:
+            sink.close()
+        except WriteFailure:
+            pass
+
+
+def _deliver(args, resp, status, header_items, transfer, sink, decoder, may_retry):
+    """The body from ``resp`` to ``sink``, a piece at a time: paced
+    (--limit-rate, --speed-limit), capped (--max-filesize), decoded
+    (--compressed). Returns curl's exit code."""
+    pace = Pace(args.rate(), args.low_speed()) if args.limit_rate or args.low_speed() else None
+
+    def settle():
+        sock = response_socket(resp)
+        if sock is not None:
+            args.connection.settle(sock)
+
+    reader = None
+    too_big = False
+    if not args.head:
+        reader = BodyReader(resp, pace, args.ignore_content_length, settle)
+        for piece in reader:
+            transfer.size_download += len(piece)  # as it came over the wire, before --compressed
+            if args.too_big(header_items, transfer.size_download):
+                too_big = True
+                break
+            sink.body(decoder.feed(piece) if decoder else piece)
+        if reader.cut is None and not too_big and decoder:
+            sink.body(decoder.finish())
+    sink.close()  # what was held back reaches its destination; a file opens even when empty
+    transfer.size_delivered = sink.delivered
+    if too_big:
+        return fail(args, transfer, EXIT_FILESIZE, 'Maximum file size exceeded')
+    if args.fails_on(status):  # --fail-with-body: the body, then the same exit 22
+        return fail(args, transfer, EXIT_HTTP, 'The requested URL returned error: %s' % status)
+    if reader is not None and reader.cut is not None:
+        # What arrived is written, as curl writes it, then the failure.
+        return body_error(args, reader.cut, transfer, reader.chunked, may_retry)
+    args.finish_download(header_items)
     return 0
 
 
@@ -757,7 +763,8 @@ def run(args):
         if args.prepare_download(headers):
             return 0  # --skip-existing: the file is there
         args.connection = args.connector()  # --interface / --local-port / --pinnedpubkey
-        args.dns = args.dns_override()  # --dns-servers / --dns-*-addr / --dns-interface / --doh-url
+        if data is not None and not isinstance(data, (bytes, bytearray)):
+            headers.setdefault('Content-Length', str(len(data)))  # a file sent as it is read
         if args.limit_rate:
             limited = args.rate()
             if data is not None and limited:
@@ -781,7 +788,7 @@ def run(args):
 
     if args.verbose and not args.silent:
         print('Request: %s %s' % (method, url), file=sys.stderr)
-        if data:
+        if data and isinstance(data, (bytes, bytearray)):
             print('Data:', data.decode('utf-8', errors='replace'), file=sys.stderr)
         print('Headers:', headers, file=sys.stderr)
         if plan is not None and not plan.bypasses(url):
@@ -796,33 +803,27 @@ def run(args):
                 file=sys.stderr,
             )
 
-    timeout = args.request_timeout()
-    limits = http.client._MAXLINE, http.client._MAXHEADERS
-    http.client._MAXLINE, http.client._MAXHEADERS = MAX_HEADER_LINE, MAX_HEADERS
-    try:
-        with args.resolution():
-            rc, transfer = _attempts(args, typed, url, method, plan, context, removed, data, headers, timeout)
-    finally:
-        http.client._MAXLINE, http.client._MAXHEADERS = limits
+    rc, transfer = _attempts(args, typed, url, method, plan, context, removed, data, headers)
     args.cleanup_after(rc)
     args.report(tokens, transfer, rc)
     return rc
 
 
-def _attempts(args, typed, url, method, plan, context, removed, data, headers, timeout):
+def _attempts(args, typed, url, method, plan, context, removed, data, headers):
     """The transfer, again after each transient failure ``--retry`` covers:
     ``(exit code, the last attempt's Transfer)``."""
     retries = max(args.retry or 0, 0)
-    first = time.monotonic()
+    first = args.retry_started = time.monotonic()
     backoff = 1.0
     while True:
         in_time = not args.retry_max_time or time.monotonic() - first < args.retry_max_time
         transfer = Transfer(typed, url, method, plan)
+        args.start_clock()
         transfer.retries = max(args.retry or 0, 0) - retries
         opener = build_opener(args, plan, context, transfer, removed)
         req = urllib.request.Request(url, data=data, headers=dict(headers), method=method)
         try:
-            rc = exchange(args, opener, req, timeout, url, transfer, may_retry=retries > 0 and in_time)
+            rc = exchange(args, opener, req, url, transfer, may_retry=retries > 0 and in_time)
             break
         except Retry as retry:
             wait = args.retry_wait(backoff, retry.after)
@@ -830,7 +831,7 @@ def _attempts(args, typed, url, method, plan, context, removed, data, headers, t
                 wait = max(0.0, min(wait, args.retry_max_time - (time.monotonic() - first)))
             if not args.silent:
                 print(
-                    'Warning: Problem %s. Will retry in %s. %s left.'
+                    'Warning: Problem %s. Retrying in %s. %s left.'
                     % (retry.what, _count(int(round(wait)), 'second', 'seconds'), _count(retries, 'retry', 'retries')),
                     file=sys.stderr,
                 )

@@ -1,18 +1,16 @@
 """Where connections go: ``-4`` / ``-6``, ``--resolve``, ``--connect-to``
 and ``--unix-socket``.
 
-The first three steer name resolution only -- ``socket.getaddrinfo`` is
-wrapped for the length of the transfer -- so the request keeps the host the
-caller named: its ``Host`` header, TLS server name and certificate check are
+The first three steer name resolution only -- the transfer's connections
+look names up through :func:`make_resolver`, nothing process-wide is
+patched -- so the request keeps the host the caller named: its ``Host`` header, TLS server name and certificate check are
 the URL's, as in curl. ``--unix-socket`` replaces the TCP connection with one
 to a Unix domain socket (the Docker API's ``/var/run/docker.sock``)."""
 
-import contextlib
 import http.client
 import ipaddress
 import re
 import socket
-import threading
 import urllib.request
 
 #: The netimps release the DNS and interface flags are tested with: its
@@ -49,8 +47,7 @@ class DnsOverride(object):
     (``ns``), ``--dns-ipv4-addr`` / ``--dns-ipv6-addr`` / ``--dns-interface``
     (``sources``) and ``--doh-url`` (``doh_url``, its TLS ``doh_context``).
     A name with no address is ``None``: the caller's ``gaierror``, curl's 6.
-    The DoH request's own name lookup goes to the OS (a thread-local guard),
-    as curl's does."""
+    The DoH request's own name lookup goes to the OS, as curl's does."""
 
     def __init__(self, servers=None, sources=None, doh_url=None, doh_context=None, timeout=None):
         flag = '--doh-url' if doh_url else '--dns-servers' if servers else '--dns-ipv4-addr / --dns-ipv6-addr'
@@ -61,26 +58,18 @@ class DnsOverride(object):
         self.doh_context = doh_context
         self.timeout = timeout or 5.0
         self.cache = {}
-        self.local = threading.local()
 
     def addresses(self, name, family):
-        """The addresses of ``name`` for ``family`` (0: IPv4 then IPv6), or
-        ``None`` while the DoH request itself is resolving."""
-        if getattr(self.local, 'busy', False):
-            return None
+        """The addresses of ``name`` for ``family`` (0: IPv4 then IPv6)."""
         key = (name.lower().rstrip('.'), family)
         if key not in self.cache:
             rdtypes = ['a'] if family == socket.AF_INET else ['aaaa'] if family == socket.AF_INET6 else ['a', 'aaaa']
             found = []
-            self.local.busy = True
-            try:
-                for rdtype in rdtypes:
-                    try:
-                        found += [str(a) for a in self._lookup(key[0], rdtype)]
-                    except (self.netimps.ResolutionError, ValueError):
-                        continue
-            finally:
-                self.local.busy = False
+            for rdtype in rdtypes:
+                try:
+                    found += [str(a) for a in self._lookup(key[0], rdtype)]
+                except (self.netimps.ResolutionError, ValueError):
+                    continue
             self.cache[key] = found
         return self.cache[key]
 
@@ -137,16 +126,14 @@ def parse_connect_to(entry):
     return (h1.lower(), int(p1) if p1 else None), (h2, int(p2) if p2 else None)
 
 
-@contextlib.contextmanager
-def resolving(family=0, resolve=(), connect_to=(), dns=None):
-    """``socket.getaddrinfo`` as ``-4`` / ``-6`` (``family``), ``--resolve``,
-    ``--connect-to`` and the DNS flags (``dns``, a :class:`DnsOverride`) ask,
-    restored afterwards."""
+def make_resolver(family=0, resolve=(), connect_to=(), dns=None):
+    """A ``socket.getaddrinfo`` that does what ``-4`` / ``-6`` (``family``),
+    ``--resolve``, ``--connect-to`` and the DNS flags (``dns``, a
+    :class:`DnsOverride`) ask, or ``None`` when none is given."""
     table = dict(parse_resolve(e) for e in resolve)
     remaps = [parse_connect_to(e) for e in connect_to]
     if not (family or table or remaps or dns):
-        yield
-        return
+        return None
     real = socket.getaddrinfo
 
     def getaddrinfo(host, port, fam=0, type=0, proto=0, flags=0):
@@ -172,26 +159,21 @@ def resolving(family=0, resolve=(), connect_to=(), dns=None):
                 return out
         if dns is not None and name and not _is_address(name):
             found = dns.addresses(name, wanted)
-            if found is not None:
-                if not found:
-                    raise socket.gaierror(socket.EAI_NONAME, 'Could not resolve host: %s' % name)
-                return [
-                    (
-                        socket.AF_INET6 if ':' in a else socket.AF_INET,
-                        socket.SOCK_STREAM,
-                        socket.IPPROTO_TCP,
-                        '',
-                        (a, number, 0, 0) if ':' in a else (a, number),
-                    )
-                    for a in found
-                ]
+            if not found:
+                raise socket.gaierror(socket.EAI_NONAME, 'Could not resolve host: %s' % name)
+            return [
+                (
+                    socket.AF_INET6 if ':' in a else socket.AF_INET,
+                    socket.SOCK_STREAM,
+                    socket.IPPROTO_TCP,
+                    '',
+                    (a, number, 0, 0) if ':' in a else (a, number),
+                )
+                for a in found
+            ]
         return real(name, number, wanted, type, proto, flags)
 
-    socket.getaddrinfo = getaddrinfo
-    try:
-        yield
-    finally:
-        socket.getaddrinfo = real
+    return getaddrinfo
 
 
 def unix_socket_handlers(path, context):

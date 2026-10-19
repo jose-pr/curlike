@@ -142,9 +142,83 @@ def header_lines(header_bytes):
     return header_bytes.splitlines(True)
 
 
-def body_chunks(content):
-    """The body as curl's write callback gets it."""
-    return [content[i : i + WRITE_CHUNK] for i in range(0, len(content), WRITE_CHUNK)]
+class BodySink(object):
+    """The headers (-i / -I) and then the body, to the -o file or stdout, in
+    the writes curl's callback makes (at most ``WRITE_CHUNK`` bytes each). The
+    file opens at the first write; a failure is curl's
+    :class:`WriteFailure`, worded by where the write failed."""
+
+    def __init__(self, args, headers):
+        self.args = args
+        self.headers = headers
+        self.first = None  # the size of the first write, for a file that cannot be opened
+        self.handle = None
+        self.out = None if args.body_target else args.stdout()
+        self.delivered = 0  # body bytes handed over
+
+    def _open(self):
+        # 'ab': a 206 answering a resume (-C) continues the file.
+        mode = 'ab' if getattr(self.args, 'append_output', False) else 'wb'
+        try:
+            self.handle = open(output_path(self.args.body_target), mode)
+            self.args.opened = True
+        except OSError:
+            if self.first is None:
+                # curl opens the file at its first write; with none, it only
+                # warns that the file could not be created.
+                raise WriteFailure(WRITE_ERROR_TEXT, coded=False)
+            raise WriteFailure(refused_write(self.first))
+
+    def _write(self, data):
+        if self.first is None:
+            self.first = len(data)
+        if self.out is None:
+            if self.handle is None:
+                self._open()
+            try:
+                self.handle.write(data)
+                if self.args.no_buffer:
+                    self.handle.flush()
+            except OSError:
+                raise WriteFailure(refused_write(self.first))
+            return
+        taken = self.out.write(data)
+        if taken != len(data):
+            raise WriteFailure(short_write(len(data), taken))
+        if self.args.no_buffer and not self.out.flush():
+            raise WriteFailure(WRITE_ERROR_TEXT, notice='Failed writing body', coded=False)
+
+    def start(self):
+        """The header lines."""
+        for line in self.headers:
+            self._write(line)
+
+    def body(self, data):
+        """Body bytes, in writes of at most ``WRITE_CHUNK``."""
+        for offset in range(0, len(data), WRITE_CHUNK):
+            piece = data[offset : offset + WRITE_CHUNK]
+            self._write(piece)
+            self.delivered += len(piece)
+
+    def close(self):
+        """What is held reaches its destination; a failure is curl's."""
+        try:
+            if self.out is None:
+                if self.handle is None:
+                    self._open()
+            elif not self.out.flush():
+                raise WriteFailure(WRITE_ERROR_TEXT, notice='Failed writing body', coded=False)
+        finally:
+            self.release()
+
+    def release(self):
+        """Close the file without complaint (the transfer failed another way)."""
+        if self.handle is not None:
+            try:
+                self.handle.close()
+            except OSError:
+                pass
+            self.handle = None
 
 
 class OutputArgs(Group):
@@ -208,9 +282,9 @@ class OutputArgs(Group):
     "Exit 22 on HTTP errors, still writing the body"
     ("--fail-with-body",)
 
-    # No-ops: the fallback prints no progress meter and writes the body in one go.
+    # No-ops: the fallback prints no progress meter.
     no_buffer: bool = False
-    "Disable output buffering (a no-op)"
+    "Hand every piece of the body on as it arrives (flush after each write)"
     ("-N", "--no-buffer")
 
     progress_bar: bool = False
@@ -303,31 +377,7 @@ class OutputArgs(Group):
         except OSError:
             raise WriteFailure(WRITE_ERROR_TEXT, notice='Failed to open %s' % self.dump_header)
 
-    def emit_output(self, header_bytes, content):
-        """The body, after the headers with -i / -I, to the -o file or to
-        stdout. A failure is curl's :class:`WriteFailure`."""
-        headers = header_lines(header_bytes) if self.include or self.head else []
-        writes = headers + body_chunks(content)
-        if self.body_target:
-            # 'ab': a 206 answering a resume (-C) continues the file.
-            mode = 'ab' if getattr(self, 'append_output', False) else 'wb'
-            try:
-                with open(output_path(self.body_target), mode) as handle:
-                    for data in writes:
-                        handle.write(data)
-            except OSError:
-                if not writes:
-                    # curl opens the file at its first write; with none, it
-                    # only warns that the file could not be created.
-                    raise WriteFailure(WRITE_ERROR_TEXT, coded=False)
-                raise WriteFailure(refused_write(len(writes[0])))
-            if not self.silent:
-                print('Output written to %s' % self.body_target, file=sys.stderr)
-            return
-        out = self.stdout()
-        for index, data in enumerate(writes):
-            taken = out.write(data)
-            if taken != len(data):
-                raise WriteFailure(short_write(len(data), taken))
-        if not out.flush():
-            raise WriteFailure(WRITE_ERROR_TEXT, notice='Failed writing body', coded=False)
+    def body_sink(self, header_bytes):
+        """The destination of the body, headers first with -i / -I: a
+        :class:`BodySink`."""
+        return BodySink(self, header_lines(header_bytes) if self.include or self.head else [])

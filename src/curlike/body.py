@@ -33,6 +33,28 @@ _FORM_TYPES = {
 }
 
 
+class FileBody(object):
+    """A regular file uploaded by ``-T``: read in pieces as it is sent (its
+    size is the Content-Length), and again for a redirect that resends it."""
+
+    PIECE = 65536
+
+    def __init__(self, path, size):
+        self.path = path
+        self.size = size
+
+    def __len__(self):
+        return self.size
+
+    def __iter__(self):
+        with open(self.path, 'rb') as handle:
+            while True:
+                piece = handle.read(self.PIECE)
+                if not piece:
+                    return
+                yield piece
+
+
 class _InOrder(argparse.Action):
     """``append``, plus a ``(dest, value)`` record in the group's ordered
     list: curl joins the pieces in command-line order, across options."""
@@ -192,7 +214,13 @@ class BodyArgs(Group):
             return url, None
         stdin = source in ('-', '.')
         try:
-            content = read_source('-' if stdin else source)
+            if not stdin and os.path.isfile(source):
+                with open(source, 'rb'):  # readable, or curl's 26 now
+                    pass
+                size = os.path.getsize(source)
+                content = FileBody(source, size) if size else b''
+            else:
+                content = read_source('-' if stdin else source)
         except OSError as exc:
             raise LocalError(EXIT_READ, 'Failed to open/read local data from file/application: %s' % exc)
         parts = urllib.parse.urlsplit(url)

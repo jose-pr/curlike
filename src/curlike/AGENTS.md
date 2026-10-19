@@ -97,7 +97,7 @@ documents them.
   --netrc-optional` and `user:pw@` in the URL; body `-d --data-ascii --data-raw
   --data-binary --data-urlencode --json -F --form-string -T`; output `-o -O
   --remote-name-all --output-dir --create-dirs -D -i --show-headers -I -s -S -v
-  -f --fail-with-body -w --stderr`; downloads `-C -J -R -z --etag-save
+  -f --fail-with-body -N -w --stderr`; downloads `-C -J -R -z --etag-save
   --etag-compare --no-clobber --skip-existing --remove-on-error --max-filesize`;
   TLS `-k --cacert --capath -E/--cert --cert-type --key --key-type --pass
   -1/--tlsv1 --tlsv1.0 --tlsv1.1 --tlsv1.2 --tlsv1.3 --tls-max --ciphers --crlfile
@@ -112,7 +112,7 @@ documents them.
   --dns-interface --doh-url --doh-insecure --retry --retry-delay --retry-max-time
   --retry-connrefused --retry-all-errors`; cookies `-b -c -j`; and the no-ops `-q -g --fail-early --expect100-timeout
   --tcp-fastopen --false-start --happy-eyeballs-timeout-ms --random-file --egd-file
-  --http1.1 -N -# --no-progress-meter --styled-output --no-keepalive
+  --http1.1 -# --no-progress-meter --styled-output --no-keepalive
   --keepalive-time --tcp-nodelay --ssl-no-revoke --ssl-revoke-best-effort
   --ca-native --proxy-ca-native --no-alpn --no-npn --no-sessionid`, each true of
   this client (no config file read, no progress shown, no keepalive, session
@@ -152,8 +152,12 @@ documents them.
     (exit 23); `-R` sets the mtime from `Last-Modified`; `-z DATE|FILE` (`-z
     -DATE`: unmodified since) and `--etag-compare` make the request conditional,
     and an unmet condition or a 304 writes no file; `--no-clobber` writes
-    `name.1`..`name.100`; `--max-filesize` over the limit is exit 63 with nothing
-    written.
+    `name.1`..`name.100`; `--max-filesize` over the limit is exit 63 (by
+    `Content-Length` before anything is written, else when the body passes it);
+    a 206 answering `-C` must start at the offset (`Content-Range: bytes
+    OFFSET-`) or it is exit 33; `--remove-on-error` removes the file a failed
+    transfer opened for writing, one it overwrote included (curl refuses it
+    with `-C`: exit 2).
   - **Proxies**: `-x` takes `http://` and `socks4://` / `socks4a://` /
     `socks5://` / `socks5h://` (`socks://` is SOCKS4), as does
     `<P>_PROXY`; the `--socks*` flags name one too and override `-x`.
@@ -230,12 +234,28 @@ documents them.
     conflicting pair (`-d` with `-F`, `-f` with `--fail-with-body`) or a bad
     proxy configuration is exit 2 (`curl: (2) …`, one line, never a
     traceback). `-o /dev/null` is the null device on Windows too.
-  - **`--retry N`** retries what curl calls transient — a timeout and HTTP
-    408/429/500/502/503/504 (`syshttp.retry.TRANSIENT_STATUSES`, the list the
-    requests session retries too) — after 1s, doubling (`--retry-delay` fixes
-    it, a `Retry-After` wins), within `--retry-max-time`; `--retry-connrefused`
-    adds a refused connection, `--retry-all-errors` any error (with `-f`, an
-    HTTP error status too). Each retry warns on stderr unless `-s`.
+  - **`--retry N`** retries what curl calls transient — a timeout, a name that
+    does not resolve and HTTP 408/429/500/502/503/504
+    (`syshttp.retry.TRANSIENT_STATUSES`, the list the requests session
+    retries too) — after 1s, doubling (`--retry-delay` fixes it, a non-zero
+    `Retry-After` wins; one that would pass `--retry-max-time` ends the
+    retries with a warning); `--retry-connrefused` adds a refused
+    connection, `--retry-all-errors` any error (a body cut short, and with
+    `-f` an HTTP error status, too). Every failed attempt prints its error
+    line, and each retry warns `Problem : …. Retrying in N seconds. M retries
+    left.` on stderr unless `-s`.
+  - **Time and size**: there is no time limit unless one is given.
+    `--connect-timeout` bounds the connect and TLS handshake only; `-m` is a
+    deadline for the whole attempt, redirect hops and a body that trickles
+    in included (a retry starts it again); `--timeout` (not a curl option)
+    ends a transfer that receives nothing for that long. A response whose
+    headers pass 300 KB is exit 56, one with over 5000 headers or a header
+    line over 100 KB exit 100, a `Content-Length` that is not one number (or
+    negative) or a NUL in a header exit 8. The body is delivered as it
+    arrives, not held: `-N` writes each piece at once, `--compressed`
+    decodes piece by piece, `-T FILE` is read as it is sent, and nothing
+    process-wide (`http.client`'s limits, `socket.getaddrinfo`) is changed
+    for a transfer.
   - `--json` sends `Content-Type` and `Accept: application/json` (repeats
     concatenate); `--data-urlencode` takes curl's `content`, `=content`,
     `name=content`, `@file`, `name@file`; `-G` moves the data into the query;

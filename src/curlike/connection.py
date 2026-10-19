@@ -3,15 +3,16 @@ the protocol no-ops (``-g``, ``--http1.1``, ``-q``)."""
 
 import errno
 import socket
+import time
 from typing import List, Optional
 
 from syshttp.retry import TRANSIENT_STATUSES
 
 from ._duho import Meta, Arg
 from .args import Group
-from .errors import EXIT_CONNECT, EXIT_TIMEOUT
+from .errors import EXIT_CONNECT, EXIT_RESOLVE, EXIT_RESOLVE_PROXY, EXIT_TIMEOUT
 from .connector import Connector, parse_local_port, parse_pins, resolve_interface
-from .netconn import DnsOverride, resolving, unix_socket_handlers
+from .netconn import DnsOverride, make_resolver, unix_socket_handlers
 
 
 def _interface_addresses(name):
@@ -221,8 +222,8 @@ class ConnectionArgs(Group):
     "Keep POST on a 303 redirect (default: GET)"
     ("--post303",)
 
-    timeout: float = 30.0
-    "Request timeout in seconds"
+    timeout: Optional[float] = None
+    "Give up when nothing is received for this many seconds (not a curl option)"
     ("--timeout",)
 
     max_time: Optional[float] = None
@@ -298,12 +299,6 @@ class ConnectionArgs(Group):
     "Use HTTP/1.1 (a no-op: it always does)"
     ("--http1.1",)
 
-    def resolution(self):
-        """The name-resolution override (-4 / -6 / --resolve / --connect-to)
-        for the length of the transfer."""
-        family = socket.AF_INET if self.ipv4 else socket.AF_INET6 if self.ipv6 else 0
-        return resolving(family, self.resolve or (), self.connect_to or (), getattr(self, 'dns', None))
-
     def dns_override(self):
         """The :class:`DnsOverride` the DNS flags ask for, or ``None``."""
         sources = [a for a in (self.dns_ipv4_addr, self.dns_ipv6_addr) if a]
@@ -358,7 +353,9 @@ class ConnectionArgs(Group):
         source = resolve_interface(self.interface) if self.interface else None
         ports = parse_local_port(self.local_port) if self.local_port else None
         pins = parse_pins(self.pinnedpubkey) if getattr(self, 'pinnedpubkey', None) else None
-        return Connector(source, ports, pins, http10=self.http1_0)
+        family = socket.AF_INET if self.ipv4 else socket.AF_INET6 if self.ipv6 else 0
+        resolver = make_resolver(family, self.resolve or (), self.connect_to or (), self.dns_override())
+        return Connector(source, ports, pins, http10=self.http1_0, limits=self, resolver=resolver)
 
     def rate(self):
         """--limit-rate in bytes per second, or ``None``."""
@@ -378,23 +375,43 @@ class ConnectionArgs(Group):
         """urllib handlers replacing the TCP ones (--unix-socket), or []."""
         return unix_socket_handlers(self.unix_socket, context) if self.unix_socket else []
 
-    def request_timeout(self):
-        """One timeout, as urllib has one: -m wins, then --connect-timeout,
-        then the shim's own --timeout; --speed-time caps it, so a stalled
-        read ends as curl's low-speed abort."""
-        timeout = self.max_time or self.connect_timeout or self.timeout
+    def start_clock(self):
+        """Start ``-m``'s clock: the whole attempt, redirect hops included."""
+        self._deadline = time.monotonic() + self.max_time if self.max_time else None
+
+    def _left(self):
+        deadline = getattr(self, '_deadline', None)
+        if deadline is None:
+            return None
+        left = deadline - time.monotonic()
+        if left <= 0:
+            raise socket.timeout('timed out')
+        return left
+
+    def connect_limit(self):
+        """How long a connection (and its TLS handshake) may take: the
+        smaller of ``--connect-timeout`` and what is left of ``-m``; ``None``
+        is no bound."""
+        bounds = [b for b in (self.connect_timeout, self._left()) if b]
+        return min(bounds) if bounds else None
+
+    def read_limit(self):
+        """How long one read may wait: what is left of ``-m``, the idle
+        ``--timeout`` and ``-y``'s window, whichever is shortest; ``None`` is
+        no bound."""
         low = self.low_speed()
-        return min(timeout, low[1]) if low and timeout else (low[1] if low else timeout)
+        bounds = [b for b in (self._left(), self.timeout, low[1] if low else None) if b]
+        return min(bounds) if bounds else None
 
     def retry_reason_for_error(self, code, reason):
         """curl's wording when a transport failure is worth another attempt,
         else ``None``."""
-        if code == EXIT_TIMEOUT or isinstance(reason, socket.timeout):
-            return ': timeout'
+        if code in (EXIT_TIMEOUT, EXIT_RESOLVE, EXIT_RESOLVE_PROXY) or isinstance(reason, socket.timeout):
+            return ': timeout'  # curl words a failed lookup so too
         if code == EXIT_CONNECT and self.retry_connrefused and _refused(reason):
             return ': connection refused'
         if self.retry_all_errors:
-            return ' (retrying all errors)'
+            return '(retrying all errors)'
         return None
 
     def retry_reason_for_status(self, status):
@@ -403,12 +420,20 @@ class ConnectionArgs(Group):
         if status in TRANSIENT_STATUSES:
             return ': HTTP error'
         if self.retry_all_errors and self.fails_on(status):
-            return ' (retrying all errors)'
+            return '(retrying all errors)'
         return None
 
     def retry_wait(self, backoff, after):
-        """Seconds before the next attempt: the server's Retry-After, else
-        --retry-delay, else the doubling backoff."""
-        if after is not None:
+        """Seconds before the next attempt: the server's Retry-After (0 is none),
+        else --retry-delay, else the doubling backoff."""
+        if after:
             return after
         return self.retry_delay if self.retry_delay else backoff
+
+    def retry_after_too_late(self, after):
+        """Whether waiting out a Retry-After of ``after`` seconds would pass
+        ``--retry-max-time``, counted from the first attempt."""
+        started = getattr(self, 'retry_started', None)
+        if not (after and self.retry_max_time and started is not None):
+            return False
+        return after > self.retry_max_time - (time.monotonic() - started)

@@ -21,7 +21,7 @@ from typing import Optional
 
 from ._duho import Meta, Arg
 from .args import Group, first_header
-from .errors import EXIT_WRITE, LocalError
+from .errors import EXIT_USAGE, EXIT_WRITE, EarlyExit, LocalError
 
 EXIT_RANGE = 33
 EXIT_FILESIZE = 63
@@ -77,7 +77,7 @@ class DownloadArgs(Group):
     resume_from = None
     append_output = False
     _time_value = None
-    _created = False
+    opened = False  # the body's file was opened for writing by this run
 
     continue_at: Arg[Optional[str], Meta(metavar='OFFSET')] = None
     "Resume at OFFSET bytes, or - for the output file's size (Range: bytes=OFFSET-)"
@@ -118,6 +118,15 @@ class DownloadArgs(Group):
     max_filesize: Arg[Optional[str], Meta(metavar='BYTES')] = None
     "Refuse a download larger than BYTES (k/M/G suffixes), exit 63"
     ("--max-filesize",)
+
+    def _check(self):
+        if self.continue_at is not None and self.remove_on_error:
+            raise EarlyExit(
+                EXIT_USAGE,
+                '--continue-at is mutually exclusive with --remove-on-error\n'
+                "curl: option -C: is badly used here\n"
+                "curl: try 'curl --help' or 'curl --manual' for more information",
+            )
 
     def size_limit(self):
         return parse_size(self.max_filesize) if self.max_filesize else None
@@ -185,6 +194,11 @@ class DownloadArgs(Group):
         length = first_header(header_items, 'content-length')
         return length.isdigit() and int(length) > limit
 
+    def _continues_at(self, header_items):
+        """Does the 206's ``Content-Range`` start at the resume offset?"""
+        match = re.match(r'^\s*bytes\s+(\d+)-', first_header(header_items, 'content-range'), re.IGNORECASE)
+        return bool(match) and int(match.group(1)) == self.resume_from
+
     def download_outcome(self, status, header_items):
         """After the response headers: ``'write'`` the body, ``'skip'`` it
         (a 304 or an unmet ``-z``, a 416 to a resume: nothing to do), or
@@ -196,6 +210,8 @@ class DownloadArgs(Group):
             if status == 416:
                 return 'skip'
             if status == 200:
+                raise LocalError(EXIT_RANGE, 'HTTP server does not seem to support byte ranges. Cannot resume.')
+            if status == 206 and not self._continues_at(header_items):
                 raise LocalError(EXIT_RANGE, 'HTTP server does not seem to support byte ranges. Cannot resume.')
             self.append_output = status == 206
         if self._time_value is not None and 200 <= status < 300:
@@ -217,8 +233,6 @@ class DownloadArgs(Group):
                         EXIT_WRITE, 'Failure writing output to destination: refusing to overwrite %s' % target
                     )
                 self.body_target = target
-        if self.body_target and not os.path.exists(self.body_target):
-            self._created = True
         return 'write'
 
     def finish_download(self, header_items):
@@ -237,8 +251,9 @@ class DownloadArgs(Group):
                 handle.write(etag + '\n' if etag else '')
 
     def cleanup_after(self, rc):
-        """``--remove-on-error``: a failed transfer leaves no file it created."""
-        if rc and self.remove_on_error and self._created and self.body_target and os.path.exists(self.body_target):
+        """``--remove-on-error``: a failed transfer leaves no file it opened
+        for writing, one it overwrote included."""
+        if rc and self.remove_on_error and self.opened and self.body_target and os.path.exists(self.body_target):
             try:
                 os.remove(self.body_target)
             except OSError:

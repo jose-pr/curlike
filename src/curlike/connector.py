@@ -19,6 +19,7 @@ import urllib.parse
 import urllib.request
 
 from .errors import EXIT_USAGE, EarlyExit, LocalError
+from .response import LimitedResponse
 
 EXIT_INTERFACE = 45
 EXIT_PINNED = 90
@@ -63,28 +64,28 @@ def _exact(sock, count):
     return data
 
 
-def _local_address(socks, host, port, family=0):
-    """``host`` resolved here, as socks4 / socks5 ask; not resolvable: curl's
-    6."""
+def _local_address(resolve, host, port, family=0):
+    """``host`` resolved here (through ``resolve``, a ``getaddrinfo``), as
+    socks4 / socks5 ask; not resolvable: curl's 6."""
     try:
-        return socket.getaddrinfo(host, port, family, socket.SOCK_STREAM)[0][4][0]
+        return resolve(host, port, family, socket.SOCK_STREAM)[0][4][0]
     except socket.gaierror:
         raise LocalError(6, 'Could not resolve host: %s' % host)
 
 
-def socks_handshake(sock, socks, host, port):
+def socks_handshake(sock, socks, host, port, resolve=socket.getaddrinfo):
     """Ask ``socks`` (connected as ``sock``) for ``host``:``port``. A refusal,
     an auth failure or a broken handshake is curl's 97."""
     try:
         if socks.kind in ('socks4', 'socks4a'):
-            _socks4(sock, socks, host, port)
+            _socks4(sock, socks, host, port, resolve)
         else:
-            _socks5(sock, socks, host, port)
+            _socks5(sock, socks, host, port, resolve)
     except OSError as exc:
         raise LocalError(EXIT_PROXY, 'Recv failure: %s' % (getattr(exc, 'strerror', None) or exc))
 
 
-def _socks4(sock, socks, host, port):
+def _socks4(sock, socks, host, port, resolve):
     user = (socks.user or '').encode('utf-8') + b'\x00'
     try:
         address = socket.inet_aton(str(ipaddress.IPv4Address(host)))
@@ -93,7 +94,7 @@ def _socks4(sock, socks, host, port):
         if socks.kind == 'socks4a':
             address, name = b'\x00\x00\x00\x01', host.encode('idna') + b'\x00'
         else:
-            address, name = socket.inet_aton(_local_address(socks, host, port, socket.AF_INET)), b''
+            address, name = socket.inet_aton(_local_address(resolve, host, port, socket.AF_INET)), b''
     sock.sendall(struct.pack('!BBH', 4, 1, port) + address + user + name)
     reply = _exact(sock, 8)
     if reply[1] != 0x5A:
@@ -104,7 +105,7 @@ def _socks4(sock, socks, host, port):
         )
 
 
-def _socks5(sock, socks, host, port):
+def _socks5(sock, socks, host, port, resolve):
     methods = b'\x00\x02' if socks.user is not None else b'\x00'
     sock.sendall(b'\x05' + bytes([len(methods)]) + methods)
     chosen = _exact(sock, 2)[1]
@@ -121,7 +122,7 @@ def _socks5(sock, socks, host, port):
     except ValueError:
         literal = None
     if literal is None and socks.kind == 'socks5':
-        literal = ipaddress.ip_address(_local_address(socks, host, port))
+        literal = ipaddress.ip_address(_local_address(resolve, host, port))
     if literal is None:
         name = host.encode('idna')
         target = b'\x03' + bytes([len(name)]) + name
@@ -366,7 +367,9 @@ class Connector(object):
     digests of acceptable server keys, or ``None``), ``http10`` (``-0``:
     HTTP/1.0 requests)."""
 
-    def __init__(self, source=None, ports=None, pins=None, http10=False):
+    def __init__(self, source=None, ports=None, pins=None, http10=False, limits=None, resolver=None):
+        self.getaddrinfo = resolver or socket.getaddrinfo  # --resolve, -4 / -6, the DNS flags
+        self.limits = limits  # the options' time limits: connect_limit() / read_limit()
         self.source = source
         self.connect_replies = []  # each CONNECT reply of the attempt, for -i / -D
         self.transfer = None  # the attempt's Transfer: where -w's timings and addresses go
@@ -386,7 +389,9 @@ class Connector(object):
         addresses the connection has, and that one more was made."""
         host, port = address
         record = self.transfer
-        infos = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
+        if self.limits is not None:
+            timeout = self.limits.connect_limit()  # None: no bound
+        infos = self.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
         if record is not None:
             record.t_namelookup = time.monotonic()
         low, high = self.ports or (0, 0)
@@ -396,7 +401,7 @@ class Connector(object):
                 sock = socket.socket(family, kind, proto)
                 try:
                     if timeout is not _DEFAULT_TIMEOUT:
-                        sock.settimeout(timeout)
+                        sock.settimeout(timeout)  # the connect's bound; ``settle`` swaps it for the read's
                     if self.binds:
                         try:
                             sock.bind((self.source or ('::' if family == socket.AF_INET6 else ''), local_port))
@@ -432,6 +437,12 @@ class Connector(object):
             raise LocalError(EXIT_INTERFACE, "Couldn't bind to %s: %s" % (what, last))
         raise last if last is not None else OSError('getaddrinfo returned no address for %s' % host)
 
+    def settle(self, sock):
+        """The bound for reading from ``sock``: what is left of ``-m``, the
+        idle ``--timeout`` and ``-y``'s window, else none."""
+        if self.limits is not None and hasattr(sock, 'settimeout'):
+            sock.settimeout(self.limits.read_limit())
+
     def check_pin(self, sock):
         _check_pins(sock, self.pins)
 
@@ -440,7 +451,7 @@ class Connector(object):
         (from this connector's source), then the handshake."""
         sock = self.create_connection((socks.host, socks.port), timeout, source_address)
         try:
-            socks_handshake(sock, socks, address[0], address[1])
+            socks_handshake(sock, socks, address[0], address[1], self.getaddrinfo)
         except Exception:
             sock.close()
             raise
@@ -457,6 +468,8 @@ class Connector(object):
                 connector.transfer.t_appconnect = time.monotonic()
 
         class Connection(base):
+            response_class = LimitedResponse
+
             if connector.http10:
                 # http.client's own HTTP/1.0 mode: the request line, and no
                 # chunked upload.
@@ -531,6 +544,11 @@ class Connector(object):
                 self.sock = proxy_tls.context.wrap_socket(raw, server_hostname=self.host) if proxy_tls else raw
 
             def connect(self):
+                self._connect_all()
+                if self.sock is not None:
+                    connector.settle(self.sock)
+
+            def _connect_all(self):
                 if proxy_tls is None:
                     base.connect(self)
                     if isinstance(self, http.client.HTTPSConnection):
