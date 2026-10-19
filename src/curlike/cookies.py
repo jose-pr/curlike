@@ -76,7 +76,8 @@ class CookieArgs(Group):
             return
         rows = self._rows()
         values = [v for k, v in header_items if k.lower() == 'set-cookie']
-        for cookie, gone in set_cookie_specs(values, urllib.parse.urlsplit(url).hostname or ''):
+        parts = urllib.parse.urlsplit(url)
+        for cookie, gone in set_cookie_specs(values, parts.hostname or '', request_path=parts.path or '/'):
             key = (cookie.domain, cookie.path, cookie.name)
             if gone:
                 rows.pop(key, None)

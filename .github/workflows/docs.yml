@@ -38,9 +38,9 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
-# The syshttp commit of 0.1.0.dev7, the floor in pyproject.toml; bump it with the floor.
+# The syshttp commit of 0.1.0.dev14, the floor in pyproject.toml; bump it with the floor.
 env:
-  SYSHTTP_REF: 475bdd67373d4a5ffac779d97f7ee1ad9d2f6920
+  SYSHTTP_REF: 26ad69c5bd3b1612692c3aa8efa390359ad6ce07
 
 jobs:
   docs-build:

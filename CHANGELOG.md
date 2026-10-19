@@ -110,3 +110,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   order, a login with no password (an empty one, not None), and the login a
   user@ URL names. -u USER asks for the password, as curl does.
 
+- -c no longer stores a cookie whose Domain the host that set it does not
+  domain-match, or a public suffix, and a cookie with no Path gets the
+  directory of the request (RFC 6265, through syshttp 0.1.0.dev14, now the
+  floor).
+
