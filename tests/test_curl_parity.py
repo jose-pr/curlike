@@ -644,6 +644,9 @@ SINCE = {
     "CONNECT 403": (8, 20, 0),
     "CONNECT 502": (8, 20, 0),
     "CONNECT 407 -w": (8, 20, 0),
+    "agent proxy CONNECT 407": (8, 20, 0),
+    "agent proxy bearer CONNECT 407": (8, 20, 0),
+    "--proxy-digest over CONNECT, wrong password": (8, 20, 0),
     "https proxy, CONNECT 407": (8, 20, 0),
 }
 EMPTY_PATH = None
@@ -863,6 +866,13 @@ SCENARIOS = [
         False,
         {},
     ),
+    (
+        "--pinnedpubkey file that is missing, on http",
+        lambda w: ["--pinnedpubkey", "/no/such/key.pem", w["echo"] + "/n"],
+        {},
+        False,
+        {},
+    ),
     # Connecting.
     ("refused", lambda w: [w["dead"] + "/"], {}, False, {}),
     ("no such host", lambda w: ["http://nonexistent.invalid/"], {}, False, {}),
@@ -1007,6 +1017,27 @@ SCENARIOS = [
     (
         "socks5 wrong password",
         lambda w: ["-x", "socks5h://agent:bad@" + w["socks_auth"], w["echo"] + "/s"],
+        {},
+        False,
+        {},
+    ),
+    (
+        "socks5, a user name over 255 bytes",
+        lambda w: ["-x", "socks5h://%s:pw@%s" % ("u" * 300, w["socks_auth"]), w["echo"] + "/s"],
+        {},
+        False,
+        {},
+    ),
+    (
+        "socks5, a password over 255 bytes",
+        lambda w: ["-x", "socks5h://u:%s@%s" % ("p" * 300, w["socks_auth"]), w["echo"] + "/s"],
+        {},
+        False,
+        {},
+    ),
+    (
+        "socks5h, a host name over 255 bytes",
+        lambda w: ["-x", "socks5h://agent:s3cret@" + w["socks_auth"], "http://%s.test/" % ".".join(["a" * 63] * 4)],
         {},
         False,
         {},
@@ -1754,6 +1785,7 @@ _NUMBERS = ("local_port", "speed_download", "speed_upload", "size_request")
 def test_write_out_timings_and_addresses(world, name, argv, tls):
     if tls and not world["tls"]:
         pytest.skip("no openssl to make the TLS origin's certificate with")
+    same = [k for k in _SAME if k != "size_delivered" or REAL_VERSION >= (8, 20, 0)]  # a 8.20 variable
     names = _TIMES + _SAME + _NUMBERS
     fmt = "|".join("%{" + v + "}" for v in names)
     args = ["-s", "-o", os.devnull, "-w", fmt] + argv(world)
@@ -1774,7 +1806,7 @@ def test_write_out_timings_and_addresses(world, name, argv, tls):
                 for k in ("time_namelookup", "time_connect", "time_pretransfer", "time_starttransfer", "time_total")
             ]
             assert chain == sorted(chain), (name, chain)
-    assert {k: fallback[k] for k in _SAME} == {k: real[k] for k in _SAME}, name
+    assert {k: fallback[k] for k in same} == {k: real[k] for k in same}, name
 
 
 def test_write_out_json_has_curls_keys(world):

@@ -86,3 +86,42 @@ def test_a_proxy_flag_the_proxy_context_replaces_is_a_conflict(capsysbinary):
 def test_a_context_must_be_an_ssl_context():
     with pytest.raises(TypeError, match="ssl.SSLContext"):
         curlike.run_fallback(["https://h/"], ssl_context="ca.pem")
+
+
+def test_a_pin_holds_under_the_callers_context(mtls_server, capsysbinary):
+    assert curlike.main(["-s", "--pinnedpubkey", "sha256//" + "A" * 43 + "=", mtls_server], ssl_context=_client()) == 90
+
+
+class _TLSProxy(BaseHTTPRequestHandler):
+    """An https:// proxy answering a plain request (no CONNECT) itself."""
+
+    def do_GET(self):
+        body = b"via " + self.path.encode()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *a):
+        pass
+
+
+@pytest.fixture()
+def tls_proxy():
+    server_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    server_ctx.load_cert_chain(DATA / "server.pem", DATA / "server.key")
+    httpd = HTTPServer(("127.0.0.1", 0), _TLSProxy)
+    httpd.socket = server_ctx.wrap_socket(httpd.socket, server_side=True)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        yield "https://127.0.0.1:%d" % httpd.server_address[1]
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_the_proxy_context_decides_the_proxy_handshake(tls_proxy, capsysbinary):
+    argv = ["-s", "-x", tls_proxy, "http://origin.invalid/x"]
+    assert curlike.main(argv, proxy_ssl_context=_client(identity=False)) == 0
+    assert capsysbinary.readouterr().out == b"via http://origin.invalid/x"
+    assert curlike.main(argv) == 60, "the OS trust store does not know the test CA"

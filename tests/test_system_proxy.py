@@ -69,6 +69,7 @@ def test_crlfile_keeps_a_context_that_checks_crls(monkeypatch):
 
     monkeypatch.setattr(tls, "new_os_context", lambda *a, **k: pytest.fail("the OS verifier ignores CRL flags"))
     pem = Path(__file__).parent / "data" / "ca.pem"  # load_verify_locations reads PEM; the type is what matters
+    monkeypatch.setattr(tls, "load_crls", lambda ctx, path: None)  # the file here is a certificate
     ctx = tls.build_ssl_context(False, crlfile=str(pem))
     assert type(ctx) is ssl.SSLContext and ctx.verify_flags & ssl.VERIFY_CRL_CHECK_CHAIN
 
