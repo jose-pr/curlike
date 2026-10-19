@@ -37,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Removed
 
+- `<P>_CURL_COMPAT` and the per-version answers behind it (`curlike.compat`):
+  curlike answers as curl 8.22, the latest stable release, and follows new
+  releases. `find_real_curl()` and `describe_curl()` are unchanged.
 - `curlike.shim` (`main`, `default_entry`, `find_real_curl`): the dotagents
   net overlay's `lib/curlshim` is the launcher now.
 

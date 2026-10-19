@@ -81,7 +81,6 @@ and are private.
 
 | Variable | Sets |
 | --- | --- |
-| `<P>_CURL_COMPAT` | the curl version curlike answers as (default: the real curl's, else 8.22) |
 | `<P>_PYTHON` | the interpreter a `.py` hook wrapper runs under |
 | `<P>_PYLIB` | where to find duho when it is not installed |
 
