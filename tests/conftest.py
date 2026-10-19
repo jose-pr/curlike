@@ -13,12 +13,13 @@ def _clean_settings(monkeypatch):
         if name.startswith("SYSHTTP_"):
             monkeypatch.delenv(name)
     # Nor the machine's system proxy configuration: tests that need one fake it.
+    import proxylib
     from syshttp import proxy
 
-    monkeypatch.setattr(proxy, "system_proxy_map", lambda: None)
-    # Every proxy a fake configuration names is reachable, unless a test probes.
-    monkeypatch.setattr(proxy, "first_reachable", lambda answer: answer[0])
-    monkeypatch.setattr(proxy, "_picked", {})
+    monkeypatch.setattr(proxy, "system_map", lambda: None)
+    # proxylib's bad-proxy marks are process-wide: one test's dead port is
+    # another's live one.
+    proxylib.clear_caches()
     # Nor its certificate store and smart cards when a server asks for a client
     # certificate; the OS still verifies servers.
     import sslcontext

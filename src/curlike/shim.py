@@ -30,6 +30,7 @@ from syshttp.env import HTTPEnv
 
 from curlike import main as fallback_main
 from curlike import run_fallback  # noqa: F401  (re-exported for callers and tests)
+from curlike.routing import configured_text, first_entry
 
 #: Revocation checking for a real curl on Windows' Schannel, which (unlike
 #: OpenSSL) checks it and fails a certificate whose revocation list is
@@ -127,7 +128,7 @@ def _system_route(argv):
     """True when the system's proxy configuration is what would route this
     command: no proxy variable is set (curl reads the ``*_proxy`` ones
     itself, and ``<P>_PROXY`` is injected as configured)."""
-    return not agent_proxy.configured_proxy_url()
+    return not configured_text()
 
 
 def agent_proxy_argv(argv):
@@ -154,18 +155,22 @@ def agent_proxy_argv(argv):
     url = None if configured else requested_url(argv)
     if not configured and not url:
         return []
-    plan = agent_proxy.plan(proxy_user=proxy_user, url=url)
-    if plan is None or plan.endpoint is not None:
+    if configured:
+        entry = agent_proxy.configured_proxy()
+    else:
+        # The system's list: the first proxy that answers (exit 7 when none
+        # does and it holds no DIRECT).
+        entry = first_entry(agent_proxy.proxy_map(), url)
+    if entry is None or entry.is_gateway:
         return []
-    extra = ['--proxy', plan.proxy]
+    extra = ['--proxy', entry.url]
     if proxy_user:
         pass  # curl already has -U on its own argv
-    elif agent_proxy.configured_authorization():
-        extra += ['--proxy-header', '%s: %s' % (plan.auth_header, plan.authorization)]
-    else:
-        creds = agent_proxy.userinfo(agent_proxy.proxy_url(url=url))
-        if creds:
-            extra += ['--proxy-user', '%s:%s' % creds]
+    elif entry.headers:
+        for name, value in entry.headers.items():
+            extra += ['--proxy-header', '%s: %s' % (name, value)]
+    elif entry.username is not None:
+        extra += ['--proxy-user', '%s:%s' % (entry.username, entry.password or '')]
     return extra
 
 

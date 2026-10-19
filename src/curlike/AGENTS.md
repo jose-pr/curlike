@@ -84,22 +84,25 @@ another. The proxy settings (`<P>_PROXY`, `<P>_PROXY_AUTH`,
 - **It uses the configured proxy either way.** Real curl reads only the global
   `http_proxy` vars, never `<P>_PROXY`, so when `<P>_PROXY` is set and you
   did not name a proxy (`-x`) or a bypass list (`--noproxy`), the shim prepends
-  `--proxy` plus `--proxy-header 'Proxy-Authorization: …'` (or `--proxy-user`
-  for URL userinfo). With no proxy variable at all, the proxy the **system's
-  configuration** names for the URL asked for (the command's first URL;
-  syshttp: WinHTTP, CFNetwork, libproxy, PAC, WPAD) is prepended the same
-  way, since curl reads none of those; a DIRECT answer adds nothing. Of a list
-  the first proxy that accepts a connection is handed over; when none does
-  and the list holds no DIRECT, the shim and the fallback both exit 7
-  (`curl: (7) no proxy the system's configuration names is reachable: …`) and
-  real curl is not run.
+  `--proxy` plus `--proxy-header 'Proxy-Authorization: …'` for
+  `<P>_PROXY_AUTH` (or `--proxy-user` for URL userinfo). With no proxy
+  variable at all, the proxy the **system's configuration** names for the URL
+  asked for (the command's first URL; syshttp's `proxy_map()` over proxylib:
+  WinHTTP, CFNetwork, libproxy, PAC, WPAD) is prepended the same way, with
+  `HTTP_PROXY_AUTH` as its header, since curl reads none of those; a DIRECT
+  answer adds nothing. Of a list the first proxy that accepts a connection
+  is handed over; when none does and the list holds no DIRECT, the shim and
+  the fallback both exit 7 (`curl: (7) no proxy of the list is reachable: …`)
+  and real curl is not run. A lone proxy is not probed: connecting to it is
+  curl's own business.
   `<P>_SYSTEM_PROXY=0` turns that off. Your own `-U user:pass` keeps the
   configured proxy and replaces its credential. A **`prefix` gateway is served by the fallback**, not real
   curl: curl cannot express `<proxy><endpoint><url>` per hop (multi-URL, `-L`,
   config files), so the shim speaks the gateway itself and flags it lacks fail
   loud. The fallback resolves the proxy exactly like `syshttp` (`<P>_PROXY`,
-  then the global vars, then the system's configuration for each URL on the
-  command line; credential and type as below), re-decides **every
+  then the request scheme's `*_PROXY` variable, then the system's
+  configuration for each URL on the command line; credential and type as
+  below; loopback is proxied unless listed, as in curl), re-decides **every
   redirect hop** (proxied again, or direct without the credential for a
   `NO_PROXY` host) and honours `NO_PROXY`. `-x` names a proxy of your own
   (always `connect`, never given the configured proxy's credential); `--noproxy`

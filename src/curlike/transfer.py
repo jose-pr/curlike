@@ -46,7 +46,8 @@ from .output import notice_lines
 from .request import has_header
 from .redirects import CurlRedirectHandler
 from .connector import ConnectHTTPHandler, ConnectHTTPSHandler, ProxyAuth, Socks
-from .routing import AgentProxyHandler, check_proxy_syntax
+from .routing import AgentProxyHandler, check_proxy_syntax, configured_text, userinfo
+from .routing import plan as proxy_plan
 from .tls import UnusableContext
 
 #: The shim's own version line (``-V``); real curl answers when it is present.
@@ -667,7 +668,7 @@ def _proxy_auth(args, plan, url):
     if args.proxy_user:
         user, _, password = args.proxy_user.partition(':')
     else:
-        found = agent_proxy.userinfo(args.effective_proxy() or agent_proxy.proxy_url(url=url))
+        found = userinfo(args.effective_proxy() or plan.uri)
         if not found:
             return None
         user, password = found
@@ -683,7 +684,7 @@ def _socks_for(args, plan, proxy, url):
     user = password = None
     if args.proxy_user:
         user, _, password = args.proxy_user.partition(':')
-    raw = proxy or agent_proxy.proxy_url(url=url) or ''
+    raw = proxy or plan.uri
     if Socks.is_socks(raw):
         return Socks(raw, user, password), None
     pre = Socks(args.preproxy) if args.preproxy else None
@@ -734,10 +735,10 @@ def run(args):
         proxy = args.effective_proxy()
         if not proxy and args.preproxy and Socks.is_socks(args.preproxy):
             proxy = args.preproxy  # a pre-proxy with no proxy after it is the proxy
-        check_proxy_syntax(proxy or agent_proxy.proxy_url(url=url))  # curl's 5
+        check_proxy_syntax(proxy or configured_text())  # curl's 5
         # Decided for this URL (the system's answer may differ per URL); its
         # redirect hops keep the decision, as with curl's own --proxy.
-        plan = agent_proxy.plan(proxy=proxy, noproxy=args.noproxy, proxy_user=args.proxy_user, url=url)
+        plan = proxy_plan(proxy=proxy, noproxy=args.noproxy, proxy_user=args.proxy_user, url=url)
         args.socks, args.socks_pre = _socks_for(args, plan, proxy, url)
         transfer = Transfer(typed, url, method, plan)
         args.output_target(url)
@@ -777,7 +778,7 @@ def run(args):
                 'Proxy%s: %s%s'
                 % (
                     ' (prefix %s)' % plan.endpoint if plan.endpoint else '',
-                    agent_proxy.redact(plan.proxy),
+                    plan.proxy,
                     ' (with %s)' % plan.auth_header if plan.authorization else '',
                 ),
                 file=sys.stderr,

@@ -274,11 +274,14 @@ def test_fallback_sends_the_configured_header(target, proxy, monkeypatch, capsys
     assert _Proxy.seen[-1] == (target + "/x", BEARER)
 
 
-def test_fallback_http_proxy_auth_fallback(target, proxy, monkeypatch, capsysbinary):
-    monkeypatch.setenv("SYSHTTP_PROXY", "http://" + proxy)
+def test_fallback_http_proxy_auth_goes_to_the_machine_proxy_only(target, proxy, monkeypatch, capsysbinary):
+    monkeypatch.setenv("HTTP_PROXY", "http://" + proxy)
     monkeypatch.setenv("HTTP_PROXY_AUTH", BASIC)
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", target + "/x"])
     assert rc == 0 and out.out == b"via-proxy"
+    monkeypatch.setenv("SYSHTTP_PROXY", "http://" + proxy)
+    rc, out = _fallback(monkeypatch, capsysbinary, ["-s", target + "/x"])
+    assert _Proxy.seen[-1][1] is None, "SYSHTTP_PROXY's credential is SYSHTTP_PROXY_AUTH, not the machine's"
 
 
 def test_fallback_url_userinfo_as_basic(target, proxy, monkeypatch, capsysbinary):

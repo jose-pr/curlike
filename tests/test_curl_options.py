@@ -634,17 +634,21 @@ def test_netscape_round_trip_keeps_httponly_and_the_flag(tmp_path):
 
 
 def test_one_proxy_plan_for_both_paths(monkeypatch):
-    from syshttp import proxy as agent_proxy
+    import base64
+
+    from curlike import routing
 
     monkeypatch.setenv("SYSHTTP_PROXY", "http://agent:pw@gw.example:8080")
     monkeypatch.setenv("SYSHTTP_PROXY_TYPE", "prefix:/fetch/")
-    plan = agent_proxy.plan()
+    url = "https://api.example.com/"
+    plan = routing.plan(url=url)
     assert plan.proxy == "http://gw.example:8080" and plan.endpoint == "/fetch/"
     assert plan.gateway_base == "http://gw.example:8080/fetch/" and plan.authorization.startswith("Basic ")
-    mine = agent_proxy.plan(proxy="http://mine:1", proxy_user="u:p")
+    mine = routing.plan(proxy="http://mine:1", proxy_user="u:p", url=url)
     assert mine.endpoint is None and mine.gateway_base is None, "-x is always a connect proxy"
-    assert mine.authorization == agent_proxy.basic_authorization("u", "p")
-    assert agent_proxy.plan(noproxy="*").bypasses("https://anything/")
+    assert mine.authorization == "Basic " + base64.b64encode(b"u:p").decode()
+    assert routing.plan(noproxy="*", url=url).bypasses("https://anything/")
+    assert not routing.plan(noproxy="example.com", url=url).bypasses("http://127.0.0.1/"), "curl: loopback unlisted"
 
 
 def test_split_cert():
