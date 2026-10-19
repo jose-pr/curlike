@@ -137,9 +137,15 @@ documents them.
     exit 1 (`Protocol "ftp" not supported or disabled in libcurl`); one that
     `--proto-redir` forbids (`file://`, `gopher://` by default) is exit 1
     too.
-  - **Credentials**: `-u` wins, then `user:pw@` in the URL, then the netrc entry
-    for the host (`default` if none matches) with `-n`/`--netrc-optional`;
-    `--digest` answers the server's challenge. `-n` without a netrc is exit 26.
+  - **Credentials**: `-u` wins (`-u USER` asks for the password, on the
+    terminal, as curl does), then `user:pw@` in the URL, then the netrc entry
+    with `-n`/`--netrc-optional`/`--netrc-file`: the first `machine` (any case)
+    or `default` entry in file order, or, for a `user@` URL, that login's
+    entry. The netrc reads `"quoted words"` with backslash escapes, ends a line
+    at a word starting with `#` and skips `macdef` bodies. `--digest` (MD5,
+    SHA-256) and `--anyauth` (Basic when that is all the server offers) answer
+    a 401 once: a rejected credential is not sent again, and a challenge
+    curlike cannot answer is the response. `-n` without a netrc is exit 26.
   - **Downloads**: `-C -` resumes from the file's size (a server ignoring the
     range is exit 33, a 416 means already complete); `-J` takes the
     `Content-Disposition` name without its directories and never overwrites
@@ -208,8 +214,7 @@ documents them.
     302 without `-L`, a plain-http proxy's 407); `-f` makes a 4xx/5xx exit 22
     with no body, `--fail-with-body` the same exit with the body.
     Before anything is sent: 1 a scheme curl does not speak, 3 a URL it cannot
-    parse; 2 a `--cacert` / `--netrc-file` naming no file (from curl 8.18 on;
-    before, 77 at the handshake / 26), 26 a `-d @` / `-H @`
+    parse; 2 a `--cacert` / `--netrc-file` naming no file, 26 a `-d @` / `-H @`
     / `-w @` / `-T` file that cannot be read (these print `curl: message`
     with no `(N)` and no `-w`, as curl does). Connecting: 5 the proxy's name
     or URL is unusable, 6 the host's name, 7 could not connect, 28 timed out,

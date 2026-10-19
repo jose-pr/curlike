@@ -43,9 +43,10 @@ from .errors import (
 )
 from .output import notice_lines
 from .request import has_header
-from .redirects import REDIRECT_CODES, Follow, max_redirs
-from .connector import ConnectHTTPHandler, ConnectHTTPSHandler, ProxyAuth, Socks
-from .routing import AgentProxyHandler, check_proxy_syntax, configured_text, userinfo
+from .redirects import REDIRECT_CODES, Follow, max_redirs, origin
+from .challenge import ChallengeAuth, ChallengeHandler
+from .connector import ConnectHTTPHandler, ConnectHTTPSHandler, Socks
+from .routing import AgentProxyHandler, caller_url, check_proxy_syntax, configured_text, userinfo
 from .routing import plan as proxy_plan
 from .tls import UnusableContext
 
@@ -271,23 +272,20 @@ def build_opener(args, plan, context, transfer, removed):
             )
         )
         if proxy_auth is not None:
-            # Plain proxying: urllib's handlers answer the 407, once.
-            passwords = _ProxyPassword(proxy_auth.user, proxy_auth.password)
-            handlers.append(_OnceProxyDigest(passwords))
-            if proxy_auth.anyauth:
-                handlers.append(_OnceProxyBasic(passwords))
+            handlers.append(ChallengeHandler(proxy_auth, proxy=True))  # plain proxying: a 407, answered once
     if args.request_target:
         handlers.append(RequestTarget(args.request_target))
     handlers.append(RequestLog(transfer))
     creds = args.credentials() if args.digest or args.anyauth else None
     if creds is not None:
-        # --digest / --anyauth: urllib answers the server's challenge (Digest
-        # before Basic); nothing is sent up front.
-        passwords = urllib.request.HTTPPasswordMgrWithDefaultRealm()
-        passwords.add_password(None, transfer.target, creds[0], creds[1])
-        handlers.append(urllib.request.HTTPDigestAuthHandler(passwords))
-        if args.anyauth:
-            handlers.append(urllib.request.HTTPBasicAuthHandler(passwords))
+        # --digest / --anyauth: the server's 401 is answered once; nothing is
+        # sent up front. The credential goes only where -L would send it.
+        handlers.append(
+            ChallengeHandler(
+                ChallengeAuth(creds[0], creds[1], anyauth=args.anyauth),
+                allowed=lambda req: args.location_trusted or _first_origin(transfer),
+            )
+        )
     handlers.append(NoRedirect())  # a 3xx is a response; ``follow`` decides
     # Only what a transfer needs: urllib's default opener would also fetch
     # ftp:// and file:// URLs and answer data: URLs.
@@ -328,6 +326,12 @@ def _via_proxy(transfer):
     than straight to the origin."""
     plan = transfer.plan
     return plan is not None and not plan.bypasses(_hop_url(transfer))
+
+
+def _first_origin(transfer):
+    """Whether the request being sent is to the first request's origin."""
+    sent = transfer.sent[-1][0] if transfer.sent else transfer.target
+    return origin(caller_url(sent, transfer.plan)) == origin(caller_url(transfer.target, transfer.plan))
 
 
 def _host_port(url):
@@ -667,38 +671,8 @@ def exchange(args, opener, req, timeout, url, transfer, may_retry=False):
     return 0
 
 
-class _ProxyPassword(urllib.request.HTTPPasswordMgr):
-    """The proxy's credentials for any realm and URL: urllib's proxy Digest
-    looks them up by the TARGET URL, which no proxy entry would match."""
-
-    def __init__(self, user, password):
-        urllib.request.HTTPPasswordMgr.__init__(self)
-        self.credentials = (user, password)
-
-    def find_user_password(self, realm, authuri):
-        return self.credentials
-
-
-class _OnceProxyDigest(urllib.request.ProxyDigestAuthHandler):
-    """urllib's proxy Digest, answering a 407 once as curl does (urllib
-    itself retries five times, then reports a 401 of its own)."""
-
-    def http_error_407(self, req, fp, code, msg, headers):
-        if req.has_header('Proxy-authorization'):
-            return None
-        return urllib.request.ProxyDigestAuthHandler.http_error_407(self, req, fp, code, msg, headers)
-
-
-class _OnceProxyBasic(urllib.request.ProxyBasicAuthHandler):
-    def http_error_407(self, req, fp, code, msg, headers):
-        offered = headers.get_all('Proxy-Authenticate') or []
-        if req.has_header('Proxy-authorization') or not any(c.strip().lower().startswith('basic') for c in offered):
-            return None  # answered already, or Basic is not offered (urllib would raise)
-        return urllib.request.ProxyBasicAuthHandler.http_error_407(self, req, fp, code, msg, headers)
-
-
 def _proxy_auth(args, plan, url):
-    """A :class:`ProxyAuth` for --proxy-digest / --proxy-anyauth with
+    """A :class:`ChallengeAuth` for --proxy-digest / --proxy-anyauth with
     credentials (-U, else the proxy URL's -- the one chosen for ``url``), or
     ``None``."""
     if not (args.proxy_digest or args.proxy_anyauth) or plan is None or plan.endpoint is not None:
@@ -710,7 +684,7 @@ def _proxy_auth(args, plan, url):
         if not found:
             return None
         user, password = found
-    return ProxyAuth(user, password, anyauth=args.proxy_anyauth)
+    return ChallengeAuth(user, password, anyauth=args.proxy_anyauth)
 
 
 def _socks_for(args, plan, proxy, url):

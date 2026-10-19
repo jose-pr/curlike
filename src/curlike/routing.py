@@ -194,7 +194,7 @@ class AgentProxyHandler(urllib.request.BaseHandler):
         self.socks = socks  # the plan's proxy when it is SOCKS (connector.Socks)
         self.preproxy = preproxy  # --preproxy: SOCKS to reach the HTTP proxy
         self.proxy_tls = proxy_tls  # an https:// proxy's TLS (tls.ProxyTLS)
-        self.proxy_auth = proxy_auth  # --proxy-digest / --proxy-anyauth (connector.ProxyAuth)
+        self.proxy_auth = proxy_auth  # --proxy-digest / --proxy-anyauth (challenge.ChallengeAuth)
 
     def _apply(self, req):
         plan = self.plan
