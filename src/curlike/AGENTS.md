@@ -206,8 +206,8 @@ documents them.
     35 a failed TLS handshake, 60 a certificate that does not verify, 58 a
     client certificate and 77 a CA bundle/path that cannot be loaded (at the
     handshake, so an `http://` transfer never fails on them), 59 an unusable
-    `--ciphers` list. A proxy refusing the https CONNECT is 56, or 7 from curl
-    8.20 on (`<P>_CURL_COMPAT`; 22 under `-f`), dropping it 56. The reply: 52
+    `--ciphers` list. A proxy refusing the https CONNECT is 7 (22 under `-f`),
+    dropping it 56. The reply: 52
     nothing came back, 1 not HTTP at all, 56 the connection reset, 18 a body
     shorter than its `Content-Length` or chunks cut short (what arrived is
     written first), 56 a malformed chunk; 23 when `-o`/`-D`/`-O` cannot be
@@ -245,8 +245,7 @@ documents them.
     status after `-f`'s 22). Timings are measured on the connection (lookup,
     connect, handshake, request sent, first byte); urllib opens a new
     connection per redirect, so `num_connects` counts hops curl may reuse one
-    for. `size_delivered` is curl 8.20's: answering as an older curl
-    (`<P>_CURL_COMPAT`), it warns and writes nothing, as that curl does. In
+    for. In
     `%{json}`, `ssl_verify_result` is 0 (verified, or not checked under
     `-k`); `certs` / `num_certs` are empty. Any other variable (`certs`,
     `ssl_verify_result`, …) is refused before the request is sent. `-q` is a
@@ -274,19 +273,15 @@ documents them.
     Lines without a code are wrapped at the terminal's width (79 with none),
     as curl wraps them. What `-w` would then have written to stdout is dropped;
     when only `-w` had stdout (the body went to `-o`), the exit code stays the
-    transfer's. Older curls differ (`<P>_CURL_COMPAT`): before 8.17 a line
-    without a code is not printed under `-s` even with `-S`, and before 8.9
-    the wording itself is older (Ubuntu 24.04's 8.5 was measured).
+    transfer's.
 - **Unsupported flags fail loud** (`curl: (2) Unsupported options: --http2`, exit
   2) rather than silently do the wrong thing — that guard is deliberate. If you
   hit one, call real `curl`.
 - **Revocation**: curlike checks no certificate revocation (as an OpenSSL
   curl) unless `--crlfile`.
-- **`<P>_CURL_COMPAT`** — the curl version curlike answers as where curl
-  versions disagree (`8.19`, `8.19.0`), or `auto` (default): the real curl on
-  PATH, else the newest measured (8.22). It changes only the answers listed in
-  `curlike.compat`, each measured against curl's own builds; an
-  unreadable value is exit 2.
+- **One curl** — curlike answers as curl 8.22, the latest stable release it
+  was measured against, and follows new releases; it does not imitate older
+  ones, whose exit codes, messages and `-w` variables differ in places.
 - TLS is the **system's** — `syshttp.tls` (sslcontext's system
   context: the OS verifies servers on Python 3.10+, CryptoAPI or the Security
   framework), the same the requests session uses; a server that asks for a
@@ -302,7 +297,6 @@ documents them.
 
 | Variable | Sets | Default |
 | --- | --- | --- |
-| `<P>_CURL_COMPAT` | the curl version curlike answers as (`8.19`, `8.19.0`, `auto`) | `auto`: the real curl's version, else 8.22 |
 | `<P>_PYLIB` | paths (`os.pathsep`-separated) to find duho in when it is not installed | none |
 | `CURL_CA_BUNDLE` | curlike's CA bundle, as in curl | the OS trust store |
 

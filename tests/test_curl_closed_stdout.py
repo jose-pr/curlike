@@ -27,7 +27,7 @@ from pathlib import Path
 import pytest
 
 import curlike as curl
-from curlike import compat, output, writeout
+from curlike import output, realcurl, writeout
 
 LIB = Path(output.__file__).resolve().parents[2]
 REAL_CURL = curl.find_real_curl()
@@ -72,15 +72,13 @@ def origin():
     listener.close()
 
 
-def _run(command, argv, take=0, keep=False, version=None):
+def _run(command, argv, take=0, keep=False):
     """``command`` over a pipe whose reader takes ``take`` bytes and closes
     (``keep``: reads it all). ``(exit code, stderr lines)``."""
     env = {k: v for k, v in os.environ.items() if not k.lower().endswith("_proxy") and k != "SYSHTTP_PROXY"}
     env["PYTHONPATH"] = os.pathsep.join([str(LIB), env.get("PYTHONPATH", "")])
     env["NO_PROXY"] = env["no_proxy"] = "127.0.0.1"
     env.pop("COLUMNS", None)  # with no terminal either, curl wraps its notices at 79
-    if version:
-        env[compat.var()] = "%d.%d.%d" % version
     proc = subprocess.Popen(
         [*command, *argv], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env
     )
@@ -172,13 +170,19 @@ def test_the_words_are_curls(name, argv, path, keep, printed, errormsg, origin, 
     assert (rc, err) == (23, expected + ["[23|%s]" % errormsg])
 
 
+#: The last curl release that changed how these messages are worded or printed.
+NEWEST_CHANGE = (8, 17, 0)
+
+
 @pytest.mark.skipif(not REAL_CURL, reason="no real curl to compare the fallback with")
 @pytest.mark.parametrize("name,argv,path,keep,printed,errormsg", CASES, ids=IDS)
 def test_the_real_curl_prints_the_same(name, argv, path, keep, printed, errormsg, origin, tmp_path):
-    """Whatever curl is installed, answered as that version."""
-    version = compat.describe(REAL_CURL)[0]
+    """The curl installed, when it is as new as the one curlike answers as."""
+    version = realcurl.describe(REAL_CURL)[0]
+    if version is None or version < NEWEST_CHANGE:
+        pytest.skip("curl %s words these messages as releases before %d.%d did" % (version, *NEWEST_CHANGE[:2]))
     argv = _argv(argv, path, origin, str(tmp_path))
-    assert _run(FALLBACK, argv, keep=keep, version=version) == _run([REAL_CURL], argv, keep=keep), version
+    assert _run(FALLBACK, argv, keep=keep) == _run([REAL_CURL], argv, keep=keep), version
 
 
 MID_TRANSFER = re.compile(r"^curl: \(23\) Failure writing output to destination, passed \d+ returned \d+$")
@@ -304,44 +308,3 @@ def test_write_out_to_a_dead_stdout_is_skipped(gone):
     gone()
     writeout._write_stream("stdout", "[0]")  # no exception
     assert not isinstance(sys.stdout, _Gone)
-
-
-PLAIN = "Failure writing output to destination"
-
-
-@pytest.mark.parametrize(
-    "version,short,refused,header,dump",
-    [
-        ("8.6.0", PLAIN, PLAIN, "Failed writing header", False),
-        ("8.7.1", SHORT % (10, 4), SHORT % (10, 4294967295), SHORT % (10, 4294967295), False),
-        ("8.8.0", SHORT % (10, 4), REFUSED % 10, REFUSED % 10, False),
-        ("8.9.0", SHORT % (10, 4), REFUSED % 10, REFUSED % 10, True),
-    ],
-)
-def test_older_curls_word_it_differently(version, short, refused, header, dump, monkeypatch):
-    monkeypatch.setenv(compat.var(), version)
-    assert compat.short_write(10, 4) == short
-    assert compat.refused_write(10) == refused
-    assert compat.refused_write(10, header=True) == header
-    assert compat.checks_header_dump() is dump
-    assert compat.wraps_to_terminal() is dump  # both arrived in 8.9
-
-
-def test_before_8_17_show_error_does_not_bring_a_notice_back(origin, tmp_path):
-    """Measured on Ubuntu's 8.5: ``-sS`` prints the ``(23)`` line and no notice."""
-    old, new = (8, 16, 0), (8, 17, 0)
-    assert _run(FALLBACK, ["-sS", origin + "/n5"], version=old) == (23, [])
-    assert _run(FALLBACK, ["-sS", origin + "/n5"], version=new) == (23, ["curl: Failed writing body"])
-    assert _run(FALLBACK, [origin + "/n5"], version=old) == (23, ["curl: Failed writing body"])
-    rc, err = _run(FALLBACK, ["-sS", "-D", str(tmp_path), "-o", os.devnull, origin + "/n5"], keep=True, version=old)
-    assert (rc, err) == (23, ["curl: (23) " + GENERIC])
-
-
-def test_before_8_9_a_notice_wraps_at_79_whatever_the_terminal(monkeypatch):
-    monkeypatch.setenv("COLUMNS", "200")
-    text = "Failed to open " + "x" * 100
-    monkeypatch.setenv(compat.var(), "8.8.0")
-    assert len(output.notice_lines(text)) == 3
-    monkeypatch.setenv(compat.var(), "8.9.0")
-    monkeypatch.setattr(compat, "_cached", {})
-    assert output.notice_lines(text) == ["curl: " + text]

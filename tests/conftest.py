@@ -1,6 +1,4 @@
-"""No test sees an SYSHTTP_* variable or the system proxy of the machine running it, and the
-fallback answers as the newest curl measured whatever curl the machine has
-(the parity tests set the real curl's own)."""
+"""No test sees an SYSHTTP_* variable or the system proxy of the machine running it."""
 
 import os
 
@@ -32,11 +30,3 @@ def _clean_settings(monkeypatch):
         return real(selector=selector, **kwargs)
 
     monkeypatch.setattr(sslcontext, "system_context", system_context)
-
-
-@pytest.fixture(autouse=True)
-def _newest_curl(monkeypatch, _clean_settings):
-    from curlike import compat
-
-    monkeypatch.setenv(compat.var(), "%d.%d.%d" % compat.NEWEST)
-    monkeypatch.setattr(compat, "_cached", {})

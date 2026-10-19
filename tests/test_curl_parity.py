@@ -8,9 +8,9 @@ the way a launcher hands it over (``--proxy`` and its credential), and
 installed. The servers are raw sockets on 127.0.0.1, so each failure is
 exact: a reply cut short, a reset, a proxy refusing or dropping the CONNECT.
 
-Where curl versions disagree, the fallback answers as the version
-``SYSHTTP_CURL_COMPAT`` names (``curlike.compat``): the comparison sets it to
-the real curl's own version, so every scenario is exact for any curl.
+The fallback answers as the latest stable curl. A scenario whose answer
+changed in a release newer than the installed curl is skipped (``SINCE``),
+never imitated.
 """
 
 import base64
@@ -538,14 +538,31 @@ SCHANNEL = bool(REAL_CURL) and _schannel()
 
 
 def _real_version():
-    from curlike.compat import installed_version
+    from curlike.realcurl import describe
 
-    found = installed_version() if REAL_CURL else None
-    return "%d.%d.%d" % found if found else "auto"
+    return (describe(REAL_CURL)[0] if REAL_CURL else None) or (0, 0, 0)
 
 
-#: The fallback answers as this curl (SYSHTTP_CURL_COMPAT).
 REAL_VERSION = _real_version()
+
+#: Scenarios whose answer changed in a curl release: the installed curl must
+#: be at least this new for the comparison to mean anything.
+SINCE = {
+    "100: a 200 KB header": (8, 6, 0),
+    "socks proxy not resolvable": (8, 14, 0),
+    "--proto unknown name": (8, 18, 0),
+    "--cacert missing": (8, 18, 0),
+    "--crlfile missing": (8, 18, 0),
+    "--netrc-file missing": (8, 18, 0),
+    "socks5, target not resolvable here": (8, 20, 0),
+    "-p, proxy refuses": (8, 20, 0),
+    "CONNECT 407": (8, 20, 0),
+    "CONNECT wrong credential": (8, 20, 0),
+    "CONNECT 403": (8, 20, 0),
+    "CONNECT 502": (8, 20, 0),
+    "CONNECT 407 -w": (8, 20, 0),
+    "https proxy, CONNECT 407": (8, 20, 0),
+}
 EMPTY_PATH = None
 
 
@@ -581,8 +598,6 @@ def _run(argv, env, real):
     e = {k: v for k, v in os.environ.items() if not _PROXY_VARS.match(k)}
     e.update(env)
     e["PATH"] = (os.path.dirname(REAL_CURL) + os.pathsep + os.environ.get("PATH", "")) if real else EMPTY_PATH
-    if not real:
-        e["SYSHTTP_CURL_COMPAT"] = REAL_VERSION  # the fallback answers as this real curl
     if real and SCHANNEL:
         # Schannel cannot check revocation for a private test CA: a
         # certificate the CA signs would fail as "revocation status unknown".
@@ -1348,6 +1363,8 @@ def _env(world, env):
 def test_the_fallback_answers_as_curl_does(world, name, argv, env, tls, allowed):
     if tls and not world["tls"]:
         pytest.skip("no openssl to make the TLS origin's certificate with")
+    if name in SINCE and REAL_VERSION < SINCE[name]:
+        pytest.skip("curl %d.%d.%d answers as releases before %d.%d did" % (REAL_VERSION + SINCE[name][:2]))
     if SCHANNEL and name in SCHANNEL_OWN:
         pytest.skip("Schannel's own behaviour: %s" % SCHANNEL_OWN[name])
 

@@ -107,13 +107,23 @@ def terminal_columns():
     return columns if 0 < columns < 10000 else 79
 
 
+def short_write(passed, returned):
+    """curl's text for a write of ``passed`` bytes the destination took only
+    ``returned`` of."""
+    return 'Failure writing output to destination, passed %d returned %d' % (passed, returned)
+
+
+def refused_write(passed):
+    """curl's text for a write of ``passed`` bytes its own output callback
+    refused: the output file could not be opened."""
+    return 'client returned ERROR on write of %d bytes' % passed
+
+
 def notice_lines(text, prefix='curl: '):
     """A message of the tool's own (one with no exit code) as curl prints
     it: wrapped to the terminal's width at a blank, or cut where there is
     none, every line under the prefix."""
-    from . import compat
-
-    width = max((terminal_columns() if compat.wraps_to_terminal() else 79) - len(prefix), 1)
+    width = max(terminal_columns() - len(prefix), 1)
     lines = []
     while len(text) > width:
         cut = width - 1
@@ -281,13 +291,11 @@ class OutputArgs(Group):
         if not self.dump_header:
             return
         if self.dump_header == '-':
-            from . import compat
-
             out = self.stdout()
             for line in header_lines(header_bytes):
                 out.write(line)
-                if not out.flush() and compat.checks_header_dump():
-                    raise WriteFailure(compat.refused_write(len(line)), notice='Failed writing headers to -')
+                if not out.flush():
+                    raise WriteFailure(refused_write(len(line)), notice='Failed writing headers to -')
             return
         try:
             with open(output_path(self.dump_header), 'wb') as handle:
@@ -298,8 +306,6 @@ class OutputArgs(Group):
     def emit_output(self, header_bytes, content):
         """The body, after the headers with -i / -I, to the -o file or to
         stdout. A failure is curl's :class:`WriteFailure`."""
-        from . import compat
-
         headers = header_lines(header_bytes) if self.include or self.head else []
         writes = headers + body_chunks(content)
         if self.body_target:
@@ -314,7 +320,7 @@ class OutputArgs(Group):
                     # curl opens the file at its first write; with none, it
                     # only warns that the file could not be created.
                     raise WriteFailure(WRITE_ERROR_TEXT, coded=False)
-                raise WriteFailure(compat.refused_write(len(writes[0]), header=bool(headers)))
+                raise WriteFailure(refused_write(len(writes[0])))
             if not self.silent:
                 print('Output written to %s' % self.body_target, file=sys.stderr)
             return
@@ -322,6 +328,6 @@ class OutputArgs(Group):
         for index, data in enumerate(writes):
             taken = out.write(data)
             if taken != len(data):
-                raise WriteFailure(compat.short_write(len(data), taken, header=index < len(headers)))
+                raise WriteFailure(short_write(len(data), taken))
         if not out.flush():
             raise WriteFailure(WRITE_ERROR_TEXT, notice='Failed writing body', coded=False)

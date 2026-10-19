@@ -10,7 +10,6 @@ from syshttp.tls import new_os_context
 
 from ._duho import Meta, Arg
 from .args import Group
-from . import compat
 from .errors import EXIT_CACERT, EXIT_CRL, EXIT_CLIENT_CERT, EXIT_USAGE, EarlyExit, LocalError
 
 EXIT_CIPHER = 59
@@ -369,8 +368,7 @@ class TLSArgs(Group):
 
     def check_files(self):
         """curl's parse-time check: a ``--cacert`` / ``--crlfile`` / ``--netrc-file`` naming
-        no file is exit 2 before anything else -- from curl 8.18 on
-        (``compat``); before, each fails where it is used."""
+        no file is exit 2 before anything else."""
         named = (
             ('--cacert', self.cacert),
             ('--crlfile', self.crlfile),
@@ -379,7 +377,7 @@ class TLSArgs(Group):
             ('--netrc-file', getattr(self, 'netrc_file', None)),
         )
         missing = [path for _, path in named if path and not os.path.exists(path)]
-        if not missing or not compat.checks_files_first():
+        if not missing:
             return
         for flag, path in named:
             if path and not os.path.exists(path):
@@ -414,8 +412,6 @@ class TLSArgs(Group):
         from .connector import parse_pins
 
         pins = parse_pins(self.proxy_pinnedpubkey) if self.proxy_pinnedpubkey else None
-        if self.proxy_insecure and not compat.pins_proxy_when_insecure():
-            pins = None  # before curl 8.10, --proxy-insecure turns the pin off too
         return ProxyTLS(context, pins)
 
     def _proxy_context(self):

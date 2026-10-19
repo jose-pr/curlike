@@ -16,7 +16,6 @@ import urllib.request
 from syshttp import proxy as agent_proxy
 from syshttp.retry import retry_after
 
-from . import compat
 from .body import FORM_CONTENT_TYPE
 from .download import EXIT_FILESIZE
 from .connection import MAX_RETRY_SLEEP
@@ -356,11 +355,6 @@ def transport_error(args, reason, transfer, may_retry):
         if via_proxy:
             proxy_host = _host_port(transfer.plan.proxy)[0]
             code, message = EXIT_RESOLVE_PROXY, 'Could not resolve proxy: %s' % proxy_host
-            if (
-                transfer.plan.proxy.split('://', 1)[0].lower().startswith('socks')
-                and compat.socks_proxy_unresolved_code() == EXIT_RESOLVE
-            ):
-                code, message = EXIT_RESOLVE, 'Could not resolve host: %s' % proxy_host  # before curl 8.14
         else:
             code, message = EXIT_RESOLVE, 'Could not resolve host: %s' % _host_port(_hop_url(transfer))[0]
     elif isinstance(reason, (socket.timeout, TimeoutError)) or 'timed out' in text:
@@ -376,13 +370,13 @@ def transport_error(args, reason, transfer, may_retry):
     elif isinstance(reason, ssl.SSLError):
         code, message = EXIT_SSL_CONNECT, 'SSL connect error: %s' % text
     elif tunnel:
-        # The proxy answered the CONNECT with a status: 56 before curl 8.20,
-        # 7 since (compat); under -f the status as an HTTP error, 22.
+        # The proxy answered the CONNECT with a status: exit 7; under -f the
+        # status as an HTTP error, 22.
         status = int(tunnel.group(1))
         if args.fails_on(status):
             code, message = EXIT_HTTP, 'The requested URL returned error: %d' % status
         else:
-            code, message = compat.connect_refused_code(), 'CONNECT tunnel failed, response %d' % status
+            code, message = EXIT_CONNECT, 'CONNECT tunnel failed, response %d' % status
     elif (
         via_proxy
         and isinstance(reason, (http.client.RemoteDisconnected, ConnectionResetError))
@@ -414,7 +408,7 @@ def reply_error(args, exc, transfer, may_retry):
     if isinstance(exc, http.client.RemoteDisconnected):
         code, message = EXIT_EMPTY_REPLY, 'Empty reply from server'
     elif isinstance(exc, http.client.LineTooLong) or str(exc).startswith('got more than'):
-        code, message = compat.too_large()  # 100, or 27 before curl 8.6
+        code, message = 100, 'A value or data field grew larger than allowed'
     elif isinstance(exc, http.client.BadStatusLine):
         line = str(exc.args[0]) if exc.args else ''
         code = EXIT_PROTOCOL
@@ -618,7 +612,7 @@ def exchange(args, opener, req, timeout, url, transfer, may_retry=False):
         # -o / -D not writable, or stdout closed under us: curl's 23, in the
         # words curl has for where the write failed.
         transfer.errormsg = exc.message
-        if exc.notice and (not args.silent or (args.show_error and compat.shows_notices_when_silent())):
+        if exc.notice and (not args.silent or args.show_error):
             print('\n'.join(notice_lines(exc.notice)), file=sys.stderr)
         if exc.coded and args.should_print_error():
             print('curl: (%d) %s' % (EXIT_WRITE, exc.message), file=sys.stderr)
@@ -704,7 +698,6 @@ def run(args):
         print(SHIM_VERSION)
         return 0
     args.check()
-    compat.check()  # an unreadable <P>_CURL_COMPAT: exit 2
     tokens = args.write_out_tokens()  # an unsupported -w variable fails before anything is sent
     args.check_files()  # --cacert / --netrc-file naming nothing: curl's 2, before anything else
     typed = args.url or args.url_positional

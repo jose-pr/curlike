@@ -44,7 +44,7 @@ def find_real_curl(skip=None):
     ``curl.py`` beside it (a launcher of curlike)."""
     from pathlib import Path
 
-    from .compat import find_real_curl as find
+    from .realcurl import find_real_curl as find
 
     return find(skip=None if skip is None else Path(skip).resolve())
 
@@ -53,7 +53,7 @@ def describe_curl(path):
     """``(version, schannel)`` of the curl at ``path``: its version as a
     tuple of ints (``None`` when it does not answer ``-V``) and whether it is
     built on Windows' Schannel."""
-    from .compat import describe
+    from .realcurl import describe
 
     return describe(path)
 

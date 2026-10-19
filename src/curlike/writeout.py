@@ -18,6 +18,9 @@ from .routing import caller_url
 #: The ``--write-out`` variables the fallback reports, with curl's meaning and
 #: format. Any other ``%{name}`` (``time_connect``, ``remote_ip``, ``json``...)
 #: or an ``%output{file}`` is refused before the request, like an unsupported flag.
+#: The curl release the command answers as (``%{curl_version}``).
+CURL_VERSION = (8, 22, 0)
+
 WRITE_OUT_VARIABLES = frozenset(
     [
         'content_type',
@@ -169,10 +172,8 @@ def write_out_values(args, transfer, exitcode):
         return 0.0 if moment is None else max(moment - transfer.started, 0.0)
 
     redirects = max(len(transfer.sent) - 1, 0)
-    from . import compat
-
-    remote = transfer.remote or ('', compat.no_port())
-    local = transfer.local or ('', compat.no_port())
+    remote = transfer.remote or ('', -1)  # no connection: -1
+    local = transfer.local or ('', -1)
     typed = transfer.typed_url
     times = {
         'time_namelookup': since(transfer.t_namelookup),
@@ -247,11 +248,8 @@ _JSON_INTEGERS = (
 
 
 def _scheme(url):
-    """%{scheme}: lower case, upper before curl 8.8 (``compat``)."""
-    from . import compat
-
-    scheme = url.split('://', 1)[0].lower() if '://' in url else ''
-    return scheme.upper() if compat.upper_scheme() else scheme
+    """%{scheme}: lower case."""
+    return url.split('://', 1)[0].lower() if '://' in url else ''
 
 
 def _url_parts(prefix, url):
@@ -279,8 +277,6 @@ def _url_parts(prefix, url):
 def _json(values, times, numbers, texts, transfer, exitcode):
     """``%{json}``: every variable as curl writes it -- numbers as numbers,
     times as seconds, absent text as null."""
-    from . import compat
-
     out = {}
     for name in WRITE_OUT_VARIABLES - {'json', 'header_json'}:
         if name in times:
@@ -296,7 +292,7 @@ def _json(values, times, numbers, texts, transfer, exitcode):
         else:
             out[name] = values[name] if values[name] != '' else None
     out['http_code'] = out['response_code'] = transfer.status
-    out['curl_version'] = 'libcurl/%d.%d.%d (curlike fallback)' % compat.version()
+    out['curl_version'] = 'libcurl/%d.%d.%d (curlike fallback)' % CURL_VERSION
     out.update(
         {
             'certs': '',
@@ -344,9 +340,7 @@ def emit_write_out(tokens, values, header_items, exitcode):
         if kind == 'header':
             value = first_header(header_items, value)
         elif kind == 'var':
-            from . import compat
-
-            value = values[value] if compat.knows_write_out(value) else ''
+            value = values[value]
         _write_stream(stream, value)
 
 
@@ -359,18 +353,10 @@ class WriteOutArgs(Group):
 
     def write_out_tokens(self):
         """The parsed format, or ``None`` without -w. Called before anything
-        is sent, so an unsupported variable is refused first; one newer than
-        the curl answered as (``compat``) is warned about, as that curl does,
-        and written as nothing."""
+        is sent, so an unsupported variable is refused first."""
         if not self.write_out:
             return None
-        from . import compat
-
-        tokens = parse_write_out(self.write_out)
-        for kind, value in tokens:
-            if kind == 'var' and not compat.knows_write_out(value):
-                print("curl: unknown --write-out variable: '%s'" % value, file=sys.stderr)
-        return tokens
+        return parse_write_out(self.write_out)
 
     def report(self, tokens, transfer, exitcode):
         """Write the -w output for a finished transfer."""

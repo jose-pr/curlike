@@ -65,13 +65,11 @@ def _exact(sock, count):
 
 def _local_address(socks, host, port, family=0):
     """``host`` resolved here, as socks4 / socks5 ask; not resolvable: curl's
-    6, or 97 before 8.20 (``compat``)."""
+    6."""
     try:
         return socket.getaddrinfo(host, port, family, socket.SOCK_STREAM)[0][4][0]
     except socket.gaierror:
-        from .compat import socks_unresolved
-
-        raise LocalError(*socks_unresolved(host, socks.host))
+        raise LocalError(6, 'Could not resolve host: %s' % host)
 
 
 def socks_handshake(sock, socks, host, port):

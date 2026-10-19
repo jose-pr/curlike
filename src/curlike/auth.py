@@ -16,7 +16,6 @@ from typing import Optional
 
 from ._duho import Meta, Arg
 from .args import Group
-from . import compat
 from .errors import EXIT_READ, EXIT_USAGE, EarlyExit, LocalError
 
 
@@ -134,13 +133,7 @@ class AuthArgs(Group):
     def _netrc_credentials(self):
         if self.netrc_file:
             if not os.path.isfile(self.netrc_file):
-                if compat.ignores_missing_netrc_file():
-                    return None  # before curl 8.12: no credentials, no error
-                if compat.checks_files_first():
-                    raise EarlyExit(
-                        EXIT_USAGE, "The file '%s' provided to --netrc-file does not exist" % self.netrc_file
-                    )
-                raise LocalError(EXIT_READ, '.netrc error: no such file')
+                raise EarlyExit(EXIT_USAGE, "The file '%s' provided to --netrc-file does not exist" % self.netrc_file)
             path = self.netrc_file
         elif self.netrc or self.netrc_optional:
             path = default_netrc()
