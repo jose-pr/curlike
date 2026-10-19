@@ -1,5 +1,5 @@
 """URL hooks: an SYSHTTP_HOOKS_<KEY> pattern matched on the caller's URL runs
-a wrapper program in the curl shim's place -- under a prefix gateway too,
+a wrapper program in curl's place (the overlay's launcher) -- under a prefix gateway too,
 where the wire URL is the gateway's and must not be what is matched.
 """
 
@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from curlike import shim as curl
+import curlike as curl
 from syshttp import hooks
 from test_jars_proxy import _Gateway, gateway, origin  # noqa: F401  (fixtures reused)
 from test_proxy_auth import _clean_env, _fallback  # noqa: F401  (autouse fixture reused)
@@ -44,7 +44,7 @@ def _no_calls():
 
 
 # --------------------------------------------------------------------------
-# the curl shim
+# curlike
 # --------------------------------------------------------------------------
 
 
@@ -70,31 +70,7 @@ sys.exit(subprocess.run([sys.executable, "-m", "curlike", "-H", "X-Hooked: wrapp
 """
 
 
-def test_curl_hook_runs_the_wrapper_which_calls_the_shim_back(origin, gateway, tmp_path, monkeypatch, capsysbinary):
-    wrapper = tmp_path / "wrap.py"
-    wrapper.write_text(WRAPPER, encoding="utf-8")
-    log = tmp_path / "log.json"
-    monkeypatch.setenv("WRAPPER_LOG", str(log))
-    monkeypatch.setenv("SYSHTTP_HOOKS_W", "^" + origin.replace(".", r"\.") + "/hooked")
-    # A command line with the wrapper's own arguments; the shim's argv follows.
-    monkeypatch.setenv("SYSHTTP_HOOKS_W_CURL", "'%s' fetch --" % wrapper)
-    monkeypatch.setenv("SYSHTTP_PYTHON", sys.executable)
-    entry = str(tmp_path / "curl")
-    rc = curl.main(["-s", origin + "/hooked"], entry=entry)
-    assert rc == 0
-    seen = json.loads(log.read_text(encoding="utf-8"))
-    assert seen["argv"] == ["fetch", "--", "-s", origin + "/hooked"]
-    assert seen["curl"] == entry and seen["skip"] == "W"
-    assert seen["url"] == origin + "/hooked" and seen["key"] == "W"
-    path, headers = _Gateway.seen[-1]
-    assert path == "/fetch/" + origin + "/hooked" and headers.get("X-Hooked") == "wrapper"
-    # An unmatched URL never runs the wrapper.
-    log.unlink()
-    rc, out = _fallback(monkeypatch, capsysbinary, ["-s", origin + "/plain"])
-    assert rc == 0 and out.out == b"gateway" and not log.exists()
-
-
-def test_curl_hook_with_only_a_py_target_leaves_the_shim_alone(origin, gateway, monkeypatch, capsysbinary):
+def test_curl_hook_with_only_a_py_target_leaves_curlike_alone(origin, gateway, monkeypatch, capsysbinary):
     monkeypatch.setenv("SYSHTTP_HOOKS_P", ".")
     monkeypatch.setenv("SYSHTTP_HOOKS_P_PY", "test_url_hooks:answer")
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", origin + "/x"])

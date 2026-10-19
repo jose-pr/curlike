@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from curlike import shim as curl
+import curlike as curl
 from curlike import connector
 from test_proxy_auth import _clean_env, _fallback  # noqa: F401  (autouse fixture reused)
 

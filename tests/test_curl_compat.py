@@ -4,7 +4,7 @@ real curl; these pin the setting itself."""
 
 import pytest
 
-from curlike import shim as curl
+import curlike as curl
 from curlike import compat
 
 
@@ -82,7 +82,7 @@ def test_an_unreadable_value_is_exit_2(monkeypatch, capsys):
     assert rc == 2 and "SYSHTTP_CURL_COMPAT=latest" in err, err
 
 
-def test_the_shim_never_finds_itself(tmp_path, monkeypatch):
+def test_a_launcher_is_never_the_real_curl(tmp_path, monkeypatch):
     shim_dir = tmp_path / "shim"
     shim_dir.mkdir()
     for name in ("curl", "curl.cmd", "curl.py"):

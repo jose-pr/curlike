@@ -1,4 +1,4 @@
-"""The curl shim's fallback at its edges, against a loopback origin: exit
+"""curlike at its edges, against a loopback origin: exit
 codes are curl's (an HTTP status is a response, -f is 22, transport 6/7/28),
 -I prints headers, -m/-u/-e/--compressed/--max-redirs are honoured, several
 -d join, a body gets the form Content-Type, -H removes and sends empty, -b
@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from curlike import shim as curl
+import curlike as curl
 from test_proxy_auth import _clean_env, _fallback  # noqa: F401  (autouse fixture reused)
 
 

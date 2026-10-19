@@ -67,7 +67,7 @@ def attach_values(argv):
 def walk_argv(argv):
     """``(seen, positionals)``: the ``_STEERING`` options as the caller wrote
     them (``None`` each when absent) and the positional arguments. argv is
-    walked the way curl reads it, using the shim's own parser only as the
+    walked the way curl reads it, using curlike's own parser only as the
     table of which options take a value: combined short flags (``-sx URL``,
     ``-Uu:p``) and option VALUES that merely look like flags (``-d
     '--proxy=x'``, ``-H --noproxy``) are handled; an unknown ``--opt`` is

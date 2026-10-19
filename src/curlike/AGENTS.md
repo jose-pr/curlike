@@ -7,13 +7,15 @@ self-contained. Development documentation lives with the source at
 <https://github.com/jose-pr/curlike>.
 
 
-The command is the API. The importable entry points are in `curlike.shim`
-(`main`) and `curlike` (`main`, `run_fallback`). Every other module holds
-the fallback's option groups and transfer machinery: none of them is
+A curl-compatible command over the standard library, and the library
+behind it. It never runs the real curl: a launcher that prefers the real one
+(the dotagents net overlay's `curl`) decides that, with the helpers below.
+The command is the API. The importable names are in `curlike` itself; every
+other module holds the option groups and transfer machinery: none of them is
 public, and their import paths may move.
 
 `pip install curlike` brings `syshttp` (proxy, cookies, TLS and URL hooks)
-and `duho` (the fallback's options). The extra `dns` adds `netimps` for
+and `duho` (the command's options). The extra `dns` adds `netimps` for
 `--dns-servers`, `--dns-ipv4-addr`, `--dns-ipv6-addr`, `--dns-interface`,
 `--doh-url` and `--interface` by name. Without it those flags are refused
 with exit 2.
@@ -21,29 +23,16 @@ with exit 2.
 ## Entry points
 
 ```python
-curlike.shim.main(argv: list[str] | None = None, *, entry: str | None = None,
-                  ssl_context: ssl.SSLContext | None = None,
-                  proxy_ssl_context: ssl.SSLContext | None = None) -> int
-curlike.shim.default_entry() -> str | None
-curlike.shim.find_real_curl(entry: str | None = None) -> str | None
-curlike.main(argv=None, *, ssl_context=None, proxy_ssl_context=None) -> int   # the fallback only
+curlike.main(argv=None, *, ssl_context=None, proxy_ssl_context=None) -> int
 curlike.run_fallback(argv, *, ssl_context=None, proxy_ssl_context=None) -> int  # raises instead of printing
+curlike.caller_steering(argv: list[str]) -> tuple[str | None, str | None, str | None]
+curlike.requested_url(argv: list[str]) -> str | None
+curlike.find_real_curl(skip: str | os.PathLike | None = None) -> str | None
+curlike.describe_curl(path: str) -> tuple[tuple[int, ...] | None, bool]
 ```
 
-- `shim.main` is the drop-in curl. It runs, in order: a matching URL hook's
-  `_CURL` wrapper; the real curl on PATH, with the configured proxy added; the
-  fallback when there is no real curl, or when a prefix gateway is
-  configured. It returns curl's exit code.
-- `entry` is the executable acting as this curl, for example a launcher's own
-  path. Its directory is skipped when looking for the real curl, and hook
-  wrappers receive it as `<P>_HOOK_CURL`. The default, `default_entry()`, is
-  `sys.argv[0]` when that names an executable called `curl` or `curlike`
-  (with any extension, but not `.py`). Otherwise it is `None`.
-- `find_real_curl` walks PATH. It skips `entry`'s directory, any hit outside
-  the directory searched, and any hit with a `curl.py` beside it (another
-  launcher of the shim).
-- `curlike.main` is the fallback by itself: one-line `curl: (N) …` errors
-  and curl's exit codes. `run_fallback` raises `NotImplementedError` (an
+- `main` runs a curl command line: one-line `curl: (N) …` errors and curl's
+  exit codes. `run_fallback` raises `NotImplementedError` (an
   unsupported flag), `ValueError` (a conflict or a bad proxy setting) and
   `SystemExit` (usage, `--help`).
 - `ssl_context` is a caller's `ssl.SSLContext`, used as given for every
@@ -55,62 +44,54 @@ curlike.run_fallback(argv, *, ssl_context=None, proxy_ssl_context=None) -> int  
   `-k`, `--cacert`, `--capath`, `--cert`, `--key`, `--pass`, `--ciphers`,
   `--crlfile`, `--tlsv1*` and `--tls-max`; the proxy has their `--proxy-*`
   twins. `--pinnedpubkey` still applies. A context that is not an
-  `ssl.SSLContext` raises `TypeError`. With a context, `shim.main` serves
-  the request from the fallback, since neither the real curl nor a hook
-  wrapper can be given one.
+  `ssl.SSLContext` raises `TypeError`.
+- `caller_steering(argv)` is `(proxy, noproxy, proxy_user)` as argv names them
+  (`-x`/`--proxy`, `--noproxy`, `-U`/`--proxy-user`), `None` each when
+  absent; `requested_url(argv)` the URL asked for (`--url`, else the first
+  positional), curl's default scheme applied, or `None`. Both read argv the
+  way curl does (combined short flags, option values that look like
+  options) without running anything.
+- `find_real_curl(skip)` is the system curl on PATH, or `None`: PATH walked
+  directory by directory, skipping the directory `skip`, any hit outside the
+  directory searched and any hit with a `curl.py` beside it (a launcher of
+  curlike). `describe_curl(path)` is that curl's version (`None` when it does
+  not answer `-V`) and whether it is built on Windows' Schannel.
 
 ## Command line
 
 ```bash
-pycurl [curl options] URL...            # the console script: shim.main
+pycurl [curl options] URL...            # the console script: curlike.main
 python -m curlike [curl options] URL...
 ```
 
-To make it the `curl` of a shell, put a launcher named `curl` ahead of the
-system curl on PATH that calls `curlike.shim.main(entry=<its own path>)`.
-The real curl is still found behind it.
+Neither runs the real curl. A launcher named `curl` that prefers the real one
+when it is installed is the dotagents net overlay's (`lib/curlshim`).
 
 ## Behaviour
 
 `<P>` is syshttp's settings prefix: `SYSHTTP` unless `SYSHTTP_PREFIX` names
 another. The proxy settings (`<P>_PROXY`, `<P>_PROXY_AUTH`,
-`<P>_PROXY_AUTH_HEADER`, `<P>_PROXY_TYPE`) and URL hooks
-(`<P>_HOOKS_<KEY>_CURL`) are syshttp's. Its own API header documents them.
+`<P>_PROXY_AUTH_HEADER`, `<P>_PROXY_TYPE`) are syshttp's. Its own API header
+documents them.
 
     curl https://example.com
     curl -s -o out.json -H 'Accept: application/json' https://api.example.com/x
     curl -X POST -d '{"k":1}' -H 'Content-Type: application/json' https://h/api
 
-- **It uses the configured proxy either way.** Real curl reads only the global
-  `http_proxy` vars, never `<P>_PROXY`, so when `<P>_PROXY` is set and you
-  did not name a proxy (`-x`) or a bypass list (`--noproxy`), the shim prepends
-  `--proxy` plus `--proxy-header 'Proxy-Authorization: …'` for
-  `<P>_PROXY_AUTH` (or `--proxy-user` for URL userinfo). With no proxy
-  variable at all, the proxy the **system's configuration** names for the URL
-  asked for (the command's first URL; syshttp's `proxy_map()` over proxylib:
-  WinHTTP, CFNetwork, libproxy, PAC, WPAD) is prepended the same way, with
-  `HTTP_PROXY_AUTH` as its header, since curl reads none of those; a DIRECT
-  answer adds nothing. Of a list the first proxy that accepts a connection
-  is handed over; when none does and the list holds no DIRECT, the shim and
-  the fallback both exit 7 (`curl: (7) no proxy of the list is reachable: …`)
-  and real curl is not run. A lone proxy is not probed: connecting to it is
-  curl's own business.
-  `<P>_SYSTEM_PROXY=0` turns that off. Your own `-U user:pass` keeps the
-  configured proxy and replaces its credential. A **`prefix` gateway is served by the fallback**, not real
-  curl: curl cannot express `<proxy><endpoint><url>` per hop (multi-URL, `-L`,
-  config files), so the shim speaks the gateway itself and flags it lacks fail
-  loud. The fallback resolves the proxy exactly like `syshttp` (`<P>_PROXY`,
-  then the request scheme's `*_PROXY` variable, then the system's
-  configuration for each URL on the command line; credential and type as
-  below; loopback is proxied unless listed, as in curl), re-decides **every
-  redirect hop** (proxied again, or direct without the credential for a
-  `NO_PROXY` host) and honours `NO_PROXY`. `-x` names a proxy of your own
-  (always `connect`, never given the configured proxy's credential); `--noproxy`
-  (`*` or a host list) replaces `NO_PROXY`, as in curl. A malformed
-  `<P>_PROXY`/`<P>_PROXY_TYPE` never blocks real curl (one warning, argv
-  as typed); the fallback, which would have to use it, exits 2.
-- **`-q` / `--disable`** must be curl's FIRST argument to skip `.curlrc`, so
-  the shim keeps a leading one first when it adds the proxy options.
+- **The proxy is syshttp's**: `<P>_PROXY` (credential and type as syshttp
+  documents them), then the request scheme's `*_PROXY` variable, then the
+  system's configuration for each URL on the command line (WinHTTP,
+  CFNetwork, libproxy, PAC, WPAD; `<P>_SYSTEM_PROXY=0` turns it off; with
+  `HTTP_PROXY_AUTH` as its header). Of a list the first proxy that accepts a
+  connection is used; when none does and the list holds no DIRECT, exit 7
+  (`curl: (7) no proxy of the list is reachable: …`); a lone proxy is not
+  probed. **Every redirect hop** is decided again (proxied, or direct without
+  the credential for a `NO_PROXY` host); loopback is proxied unless listed, as
+  in curl. A `prefix` gateway is spoken per hop. `-x` names a proxy of your
+  own (always `connect`, never given the configured credential); `--noproxy`
+  (`*` or a host list) replaces `NO_PROXY`, as in curl; `-U` replaces the
+  credential. A malformed `<P>_PROXY`/`<P>_PROXY_TYPE` that would be used is
+  exit 2.
 - Supported (`curl -h` lists them): request `-X -G --url --url-query -H -A -e
   -r --compressed --request-target --proto --proto-redir --proto-default --path-as-is`; auth `-u --basic --digest --anyauth --oauth2-bearer -n --netrc-file
   --netrc-optional` and `user:pw@` in the URL; body `-d --data-ascii --data-raw
@@ -299,29 +280,14 @@ another. The proxy settings (`<P>_PROXY`, `<P>_PROXY_AUTH`,
 - **Unsupported flags fail loud** (`curl: (2) Unsupported options: --http2`, exit
   2) rather than silently do the wrong thing — that guard is deliberate. If you
   hit one, call real `curl`.
-- **`<P>_CURL_SSL_REVOKE`** — certificate revocation for a real curl on
-  Windows' Schannel (Git Bash's curl, `System32\curl.exe`), which checks it and
-  fails with exit 60 ("the revocation status is unknown") when a certificate's
-  revocation list is missing or unreachable — common behind a TLS-inspecting
-  proxy — while OpenSSL curls (Linux, macOS) never check. `best-effort`
-  (default) adds `--ssl-revoke-best-effort`: a list that is there is checked, a
-  missing one is not a failure. `false` adds `--ssl-no-revoke`, `true` adds
-  nothing. Only for a Schannel curl, and never when the command names
-  `--ssl-no-revoke` / `--ssl-revoke-best-effort` itself. curl has no such
-  option for an `https://` proxy's own
-  certificate: through one whose certificate has no revocation list, a
-  Schannel curl fails whatever is set (the fallback does not: `<P>_CURL=` cannot
-  help, but removing the real curl from PATH, or an OpenSSL curl, does). The fallback checks no revocation (as OpenSSL curl) unless
-  `--crlfile`.
-- **`<P>_CURL_COMPAT`** — the curl version the fallback answers as where curl
+- **Revocation**: curlike checks no certificate revocation (as an OpenSSL
+  curl) unless `--crlfile`.
+- **`<P>_CURL_COMPAT`** — the curl version curlike answers as where curl
   versions disagree (`8.19`, `8.19.0`), or `auto` (default): the real curl on
   PATH, else the newest measured (8.22). It changes only the answers listed in
   `curlike.compat`, each measured against curl's own builds; an
   unreadable value is exit 2.
-- **`<P>_CURL=0`** (or `n`/`no`/`false`/`off`) runs the real curl exactly as
-  typed — no configured proxy, no hooks, no fallback; exit 2 if there is none. Unset
-  or `1`/`y` is the shim.
-- Fallback TLS is the **system's** — `syshttp.tls` (sslcontext's system
+- TLS is the **system's** — `syshttp.tls` (sslcontext's system
   context: the OS verifies servers on Python 3.10+, CryptoAPI or the Security
   framework), the same the requests session uses; a server that asks for a
   client certificate gets one from the OS store (smart cards included), chosen
@@ -336,23 +302,18 @@ another. The proxy settings (`<P>_PROXY`, `<P>_PROXY_AUTH`,
 
 | Variable | Sets | Default |
 | --- | --- | --- |
-| `<P>_CURL` | `0`/`n`/`no`/`false`/`off`: run the real curl exactly as typed | the shim |
-| `<P>_CURL_COMPAT` | the curl version the fallback answers as (`8.19`, `8.19.0`, `auto`) | `auto`: the real curl's version, else 8.22 |
-| `<P>_CURL_SSL_REVOKE` | `best-effort`, `true` or `false`: revocation for a Schannel curl | `best-effort` |
-| `<P>_PYTHON` | the interpreter a `.py` hook wrapper runs under | this interpreter |
+| `<P>_CURL_COMPAT` | the curl version curlike answers as (`8.19`, `8.19.0`, `auto`) | `auto`: the real curl's version, else 8.22 |
 | `<P>_PYLIB` | paths (`os.pathsep`-separated) to find duho in when it is not installed | none |
-| `CURL_CA_BUNDLE` | the fallback's CA bundle, as in curl | the OS trust store |
+| `CURL_CA_BUNDLE` | curlike's CA bundle, as in curl | the OS trust store |
 
-The proxy, its credential, its kind, `NO_PROXY` and the URL hooks are read
-by syshttp under the same prefix.
+The proxy, its credential, its kind and `NO_PROXY` are read by syshttp under
+the same prefix.
 
 ## Gotchas
 
 - An unsupported flag is exit 2 (`curl: (2) Unsupported options: …`). It is
   never silently ignored, so call the real curl for it.
-- The real curl gets the configured proxy only when you name no proxy (`-x`)
-  and no bypass list (`--noproxy`) yourself.
-- Under a `prefix` gateway every request goes through the fallback, even with
-  a real curl installed.
-- The fallback reads no `.curlrc`, shows no progress meter, and keeps no
+- `pycurl` never runs the real curl, even when one is installed: a launcher
+  makes that choice.
+- curlike reads no `.curlrc`, shows no progress meter, and keeps no
   connection alive between redirects.

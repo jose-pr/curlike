@@ -1,6 +1,6 @@
 """A caller's ssl.SSLContext for the fallback: mutual TLS and a pinned
 protocol version through the curl command line, the flags it replaces
-refused, and the shim serving a request with a context from the fallback.
+refused.
 
 The server is a loopback HTTPS server that requires a client certificate from
 the test CA in tests/data (test material, never real credentials)."""
@@ -13,7 +13,6 @@ from pathlib import Path
 import pytest
 
 import curlike
-from curlike import shim
 
 DATA = Path(__file__).parent / "data"
 
@@ -87,9 +86,3 @@ def test_a_proxy_flag_the_proxy_context_replaces_is_a_conflict(capsysbinary):
 def test_a_context_must_be_an_ssl_context():
     with pytest.raises(TypeError, match="ssl.SSLContext"):
         curlike.run_fallback(["https://h/"], ssl_context="ca.pem")
-
-
-def test_the_shim_serves_a_context_from_the_fallback(mtls_server, monkeypatch, capsysbinary):
-    monkeypatch.setattr(shim, "find_real_curl", lambda *a: pytest.fail("the real curl cannot take a context"))
-    assert shim.main(["-s", mtls_server], ssl_context=_client()) == 0
-    assert capsysbinary.readouterr().out.split()[0] == b"client-rsa"

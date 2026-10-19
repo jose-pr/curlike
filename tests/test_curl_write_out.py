@@ -1,4 +1,4 @@
-"""The curl shim's -w/--write-out and -q/--disable: the fallback reports the
+"""curlike's -w/--write-out and -q/--disable: the fallback reports the
 variables scripts and agents use, formatted as real curl formats them (checked
 against curl 8.21), writes them however the transfer ends, and refuses a
 variable it cannot report before anything is sent; -q is a no-op there, and
@@ -11,9 +11,9 @@ import socket
 
 import pytest
 
-from curlike import shim as curl
+import curlike as curl
 from test_curl_edges import _Edge, origin  # noqa: F401  (fixture reused)
-from test_proxy_auth import BEARER, _capture_real_curl, _clean_env, _fallback  # noqa: F401
+from test_proxy_auth import BEARER, _clean_env, _fallback  # noqa: F401
 
 
 def _w(monkeypatch, capsysbinary, fmt, *argv):
@@ -29,19 +29,6 @@ def _w(monkeypatch, capsysbinary, fmt, *argv):
 def test_q_is_a_no_op_in_the_fallback(flag, origin, monkeypatch, capsysbinary):
     rc, out = _fallback(monkeypatch, capsysbinary, [*flag, "-s", origin + "/x"])
     assert rc == 0 and out.out == b"hello"
-
-
-@pytest.mark.parametrize("lead", ["-q", "--disable", "-qs"])
-def test_real_curl_keeps_a_leading_q_first(lead, monkeypatch):
-    calls = _capture_real_curl(monkeypatch)
-    monkeypatch.setenv("SYSHTTP_PROXY", "http://proxy.example:3128")
-    monkeypatch.setenv("SYSHTTP_PROXY_AUTH", BEARER)
-    curl.main([lead, "https://api.example.com/"])
-    assert calls[-1][1] == lead
-    assert calls[-1][2:4] == ["--proxy", "http://proxy.example:3128"]
-    # A -q that is not first is curl's to ignore: argv stays as typed.
-    curl.main(["-s", "-q", "https://api.example.com/"])
-    assert calls[-1][1] == "--proxy" and calls[-1][-3:] == ["-s", "-q", "https://api.example.com/"]
 
 
 # --------------------------------------------------------------------------- #

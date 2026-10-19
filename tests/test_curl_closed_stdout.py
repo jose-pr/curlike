@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from curlike import shim as curl
+import curlike as curl
 from curlike import compat, output, writeout
 
 LIB = Path(output.__file__).resolve().parents[2]

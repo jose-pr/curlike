@@ -2,9 +2,9 @@
 servers, compared on what a caller sees -- the exit code, the ``curl: (N)``
 error code and stdout (``-w`` included).
 
-Both sides run through the shim, ``python -m curlike``, as a subprocess:
-with the real curl's directory on PATH it passes the command through (adding
-the configured proxy), with an empty PATH it serves it itself. Skipped when no real curl is
+Both sides run as a subprocess: the real curl, given the configured proxy
+the way a launcher hands it over (``--proxy`` and its credential), and
+``python -m curlike``, which reads it itself. Skipped when no real curl is
 installed. The servers are raw sockets on 127.0.0.1, so each failure is
 exact: a reply cut short, a reset, a proxy refusing or dropping the CONNECT.
 
@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pytest
 
-from curlike import shim as curl
+import curlike as curl
 from fake_socks import FakeSocks  # noqa: E402  (tests/)
 from test_curl_options import _openssl, pki  # noqa: F401  (fixture reused)
 
@@ -549,8 +549,30 @@ REAL_VERSION = _real_version()
 EMPTY_PATH = None
 
 
+def _launcher_argv(env):
+    """What a launcher adds for ``SYSHTTP_PROXY`` before the real curl's argv
+    (the dotagents net overlay's ``curl`` does): ``--proxy`` with
+    ``--proxy-header`` for a header credential or ``--proxy-user`` for
+    userinfo; nothing for a malformed value (real curl then runs as typed)."""
+    from syshttp import HTTPEnv
+    from syshttp import proxy as agent_proxy
+
+    try:
+        entry = agent_proxy.configured_proxy(env=HTTPEnv(environ=env))
+    except ValueError:
+        return []
+    if entry is None:
+        return []
+    extra = ["--proxy", entry.url]
+    for name, value in entry.headers.items():
+        extra += ["--proxy-header", "%s: %s" % (name, value)]
+    if entry.username is not None and not entry.headers:
+        extra += ["--proxy-user", "%s:%s" % (entry.username, entry.password or "")]
+    return extra
+
+
 def _run(argv, env, real):
-    """``(exit code, curl: (N) code or None, stdout)`` from the shim."""
+    """``(exit code, curl: (N) code or None, stdout)`` from the real curl or curlike."""
     global EMPTY_PATH
     if EMPTY_PATH is None:
         import tempfile
@@ -565,10 +587,9 @@ def _run(argv, env, real):
         # Schannel cannot check revocation for a private test CA: a
         # certificate the CA signs would fail as "revocation status unknown".
         argv = ["--ssl-no-revoke"] + argv
+    command = [REAL_CURL] + _launcher_argv(e) if real else [sys.executable, "-m", "curlike"]
     try:
-        p = subprocess.run(
-            [sys.executable, "-m", "curlike"] + argv, capture_output=True, env=e, timeout=30, stdin=subprocess.DEVNULL
-        )
+        p = subprocess.run(command + argv, capture_output=True, env=e, timeout=30, stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired:
         return "timeout", None, b"", b""
     m = re.search(rb"curl: \((\d+)\)", p.stderr)
@@ -1171,8 +1192,8 @@ SCENARIOS = [
     ),
     ("CONNECT tunnelled", lambda w: w["ca"] + ["-x", P(w, "proxy"), "-U", "agent:s3cret", S(w)], {}, True, {}),
     ("CONNECT tunnelled, untrusted", lambda w: ["-x", P(w, "proxy"), "-U", "agent:s3cret", S(w)], {}, True, {}),
-    # The agent proxy (SYSHTTP_PROXY): the shim hands it to real curl as
-    # --proxy / --proxy-header; the fallback applies it itself.
+    # The agent proxy (SYSHTTP_PROXY): a launcher hands it to real curl as
+    # --proxy / --proxy-header; curlike applies it itself.
     ("agent proxy", lambda w: [X], {"SYSHTTP_PROXY": "@proxy", "SYSHTTP_PROXY_AUTH": BASIC}, False, {}),
     (
         "agent proxy, wrong credential",

@@ -9,9 +9,9 @@ import ssl
 import proxylib
 import pytest
 
-from curlike import shim as curl
+import curlike as curl
 from syshttp import proxy as agent_proxy
-from test_proxy_auth import BEARER, _capture_real_curl, _fallback, _Proxy, proxy, target  # noqa: F401
+from test_proxy_auth import BEARER, _fallback, _Proxy, proxy, target  # noqa: F401
 
 
 class _FakeSystem:
@@ -47,36 +47,6 @@ def no_proxy_vars(monkeypatch):
         "no_proxy",
     ):
         monkeypatch.delenv(name, raising=False)
-
-
-def test_the_real_curl_gets_the_systems_proxy(monkeypatch, no_proxy_vars):
-    fake = _FakeSystem("PROXY pac.example:3128")
-    monkeypatch.setattr(agent_proxy, "system_map", lambda: fake)
-    monkeypatch.setenv("HTTP_PROXY_AUTH", BEARER)
-    calls = _capture_real_curl(monkeypatch)
-    assert curl.main(["-s", "https://api.example.com/x"]) == 0
-    assert calls[-1][1:] == [
-        "--proxy",
-        "http://pac.example:3128",
-        "--proxy-header",
-        "Proxy-Authorization: " + BEARER,
-        "-s",
-        "https://api.example.com/x",
-    ]
-    assert fake.asked == ["https://api.example.com/x"], "asked for the URL the caller typed"
-
-
-def test_a_direct_answer_or_a_variable_leaves_the_real_curl_alone(monkeypatch, no_proxy_vars):
-    calls = _capture_real_curl(monkeypatch)
-    monkeypatch.setattr(agent_proxy, "system_map", lambda: _FakeSystem(None))
-    curl.main(["-s", "https://api.example.com/"])
-    assert calls[-1][1:] == ["-s", "https://api.example.com/"], "DIRECT"
-    fake = _FakeSystem("PROXY pac.example:3128")
-    monkeypatch.setattr(agent_proxy, "system_map", lambda: fake)
-    monkeypatch.setenv("HTTPS_PROXY", "http://global.example:3128")
-    curl.main(["-s", "https://api.example.com/"])
-    assert calls[-1][1:] == ["-s", "https://api.example.com/"], "curl reads HTTPS_PROXY itself"
-    assert fake.asked == []
 
 
 def test_the_fallback_goes_through_the_systems_proxy(target, proxy, monkeypatch, capsysbinary, no_proxy_vars):
@@ -140,22 +110,6 @@ def _unreachable(monkeypatch):
     route = "PROXY 127.0.0.1:%d; PROXY 127.0.0.1:%d" % (first, second)
     monkeypatch.setattr(agent_proxy, "system_map", lambda: _FakeSystem(route))
     return "no proxy of the list is reachable: 127.0.0.1:%d, 127.0.0.1:%d" % (first, second)
-
-
-def test_the_real_curl_gets_the_first_system_proxy_that_answers(target, proxy, monkeypatch, no_proxy_vars):
-    route = "PROXY 127.0.0.1:%d; PROXY %s" % (_dead_port(), proxy)
-    monkeypatch.setattr(agent_proxy, "system_map", lambda: _FakeSystem(route))
-    calls = _capture_real_curl(monkeypatch)
-    assert curl.main(["-s", "https://api.example.com/x"]) == 0
-    assert calls[-1][1:3] == ["--proxy", "http://" + proxy]
-
-
-def test_the_shim_exits_7_when_no_system_proxy_answers(monkeypatch, capsys, no_proxy_vars):
-    message = _unreachable(monkeypatch)
-    calls = _capture_real_curl(monkeypatch)
-    assert curl.main(["-s", "https://api.example.com/x"]) == 7
-    assert calls == [], "real curl is not run without a route"
-    assert capsys.readouterr().err.startswith("curl: (7) " + message)
 
 
 def test_the_fallback_exits_7_when_no_system_proxy_answers(monkeypatch, capsysbinary, no_proxy_vars):

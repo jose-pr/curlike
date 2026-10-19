@@ -1,5 +1,5 @@
 import sys
 
-from curlike.shim import main
+from curlike import main
 
 sys.exit(main())

@@ -1,4 +1,4 @@
-"""Cookies under the configured proxy: the curl shim's -c writes the ORIGIN's
+"""Cookies under the configured proxy: curlike's -c writes the ORIGIN's
 cookies (the URL the caller asked for) under a prefix gateway, never the
 gateway's.
 
@@ -162,7 +162,7 @@ def gateway(monkeypatch):
 
 
 # --------------------------------------------------------------------------
-# the curl shim
+# curlike
 # --------------------------------------------------------------------------
 
 

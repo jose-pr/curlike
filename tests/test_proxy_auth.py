@@ -1,4 +1,4 @@
-"""Proxy credentials, kind and bypass, end to end through the curl shim:
+"""Proxy credentials, kind and bypass, end to end through curlike:
 the real-curl passthrough and the stdlib fallback.
 
 No external network: a fake authenticating forward proxy, a fake prefix gateway
@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from curlike import shim as curl
+import curlike as curl
 from syshttp import proxy as agent_proxy  # noqa: E402  (lib/, via conftest)
 
 _ALL_VARS = [
@@ -161,106 +161,13 @@ def gateway():
 # syshttp.proxy: the header value, its sources, redaction, kind, bypass
 # --------------------------------------------------------------------------
 
-# --------------------------------------------------------------------------
-# curl shim, real-curl passthrough: the agent proxy is handed to curl
-# --------------------------------------------------------------------------
-
-
-def _capture_real_curl(monkeypatch):
-    calls = []
-    monkeypatch.setattr(curl, "find_real_curl", lambda *a: "/usr/bin/curl")
-
-    class _Res:
-        returncode = 0
-
-    monkeypatch.setattr(curl.subprocess, "run", lambda argv, *a, **k: calls.append(list(argv)) or _Res())
-    return calls
-
-
-def test_real_curl_gets_the_agent_proxy_and_the_header(monkeypatch):
-    calls = _capture_real_curl(monkeypatch)
-    monkeypatch.setenv("SYSHTTP_PROXY", "http://proxy.example:3128")
-    monkeypatch.setenv("SYSHTTP_PROXY_AUTH", BEARER)
-    assert curl.main(["-s", "https://api.example.com/"]) == 0
-    assert calls[0][1:] == [
-        "--proxy",
-        "http://proxy.example:3128",
-        "--proxy-header",
-        "Proxy-Authorization: " + BEARER,
-        "-s",
-        "https://api.example.com/",
-    ]
-
-
-def test_real_curl_url_userinfo_becomes_proxy_user(monkeypatch):
-    calls = _capture_real_curl(monkeypatch)
-    monkeypatch.setenv("SYSHTTP_PROXY", "http://agent:s3cret@proxy.example:3128")
-    curl.main(["https://api.example.com/"])
-    assert calls[0][1:5] == ["--proxy", "http://proxy.example:3128", "--proxy-user", "agent:s3cret"]
-
-
-def test_real_curl_is_not_used_for_a_prefix_gateway(target, gateway, monkeypatch, capsysbinary):
-    """curl has no notion of <proxy><endpoint><url>, and rewriting its URL
-    argument cannot cover multi-URL invocations, -L, or config files -- so a
-    prefix gateway is served by the fallback, which speaks it per hop."""
-    calls = _capture_real_curl(monkeypatch)
-    monkeypatch.setenv("SYSHTTP_PROXY", gateway)
-    monkeypatch.setenv("SYSHTTP_PROXY_TYPE", "prefix:/fetch/")
-    monkeypatch.setenv("SYSHTTP_PROXY_AUTH", BEARER)
-    assert curl.main(["-s", target + "/x"]) == 0
-    assert calls == [], "real curl must not run"
-    assert capsysbinary.readouterr().out == b"via-gateway"
-    # ...but a caller who steers the proxy gets real curl as typed.
-    curl.main(["-x", "http://mine:1", "https://api.example.com/"])
-    assert calls[-1][1:] == ["-x", "http://mine:1", "https://api.example.com/"]
-
-
-def test_real_curl_untouched_without_agents_proxy_or_when_caller_names_a_proxy(monkeypatch):
-    calls = _capture_real_curl(monkeypatch)
-    # The global vars are curl's own business -- never injected.
-    monkeypatch.setenv("HTTPS_PROXY", "http://global.example:3128")
-    curl.main(["https://api.example.com/"])
-    assert calls[-1][1:] == ["https://api.example.com/"]
-    monkeypatch.setenv("SYSHTTP_PROXY", "http://proxy.example:3128")
-    monkeypatch.setenv("SYSHTTP_PROXY_AUTH", BEARER)
-    for steer in (["-x", "http://other:1"], ["--proxy=http://other:1"], ["-sx", "http://other:1"], ["--noproxy", "*"]):
-        curl.main([*steer, "https://api.example.com/"])
-        assert calls[-1][1:] == [*steer, "https://api.example.com/"], steer
-    # An option VALUE that merely looks like a flag is not steering.
-    curl.main(["-d", "--proxy=trap", "https://api.example.com/"])
-    assert calls[-1][1:5] == [
-        "--proxy",
-        "http://proxy.example:3128",
-        "--proxy-header",
-        "Proxy-Authorization: " + BEARER,
-    ]
-
-
-def test_real_curl_caller_credentials_keep_the_agent_proxy(monkeypatch):
-    """-U names a credential, not a proxy: the agent proxy still applies, the
-    agent credential does not (curl has the caller's -U on its own argv)."""
-    calls = _capture_real_curl(monkeypatch)
-    monkeypatch.setenv("SYSHTTP_PROXY", "http://proxy.example:3128")
-    monkeypatch.setenv("SYSHTTP_PROXY_AUTH", BEARER)
-    curl.main(["-U", "me:pw", "https://api.example.com/"])
-    assert calls[-1][1:] == ["--proxy", "http://proxy.example:3128", "-U", "me:pw", "https://api.example.com/"]
-
-
-def test_real_curl_runs_as_typed_when_the_agent_proxy_is_malformed(monkeypatch, capsysbinary):
-    calls = _capture_real_curl(monkeypatch)
-    monkeypatch.setenv("SYSHTTP_PROXY", "http://[bad:3128")
-    assert curl.main(["https://api.example.com/"]) == 0
-    assert calls[-1][1:] == ["https://api.example.com/"]
-    assert capsysbinary.readouterr().err.startswith(b"curl: ignoring the configured proxy:")
-
 
 # --------------------------------------------------------------------------
-# curl shim, stdlib fallback: authenticates to the proxy, honours kind + bypass
+# curlike: authenticates to the proxy, honours kind + bypass
 # --------------------------------------------------------------------------
 
 
 def _fallback(monkeypatch, capsysbinary, argv):
-    monkeypatch.setattr(curl, "find_real_curl", lambda *a: None)
     rc = curl.main(argv)
     return rc, capsysbinary.readouterr()
 
@@ -359,8 +266,6 @@ def test_fallback_verbose_never_prints_the_credential(target, proxy, monkeypatch
 
 def test_bad_type_is_harmless_without_a_proxy(target, monkeypatch, capsysbinary):
     monkeypatch.setenv("SYSHTTP_PROXY_TYPE", "socks5")
-    calls = _capture_real_curl(monkeypatch)
-    assert curl.main(["https://api.example.com/"]) == 0 and calls[-1][1:] == ["https://api.example.com/"]
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", target + "/x"])
     assert rc == 0 and out.out == b"hello"
 
@@ -368,12 +273,6 @@ def test_bad_type_is_harmless_without_a_proxy(target, monkeypatch, capsysbinary)
 def test_bad_type_with_a_proxy(target, monkeypatch, capsysbinary):
     monkeypatch.setenv("SYSHTTP_PROXY", "http://proxy.example:3128")
     monkeypatch.setenv("SYSHTTP_PROXY_TYPE", "socks5")
-    # Real curl still runs, as typed, after one warning (never a traceback).
-    calls = _capture_real_curl(monkeypatch)
-    assert curl.main(["https://api.example.com/"]) == 0
-    assert calls[-1][1:] == ["https://api.example.com/"]
-    err = capsysbinary.readouterr().err
-    assert err.startswith(b"curl: ignoring the configured proxy: SYSHTTP_PROXY_TYPE") and b"Traceback" not in err
     # The fallback cannot proceed without knowing how to speak to the proxy: exit 2.
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", target + "/x"])
     assert rc == 2 and out.err.startswith(b"curl: (2) SYSHTTP_PROXY_TYPE") and b"Traceback" not in out.err

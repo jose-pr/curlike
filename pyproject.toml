@@ -27,10 +27,10 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    # 0.1.0.dev6: proxy.proxy_map() and configured_proxy(), routing on proxylib 2.
-    "syshttp>=0.1.0.dev6,<0.2",
+    # 0.1.0.dev7: proxy.proxy_map() over proxylib 2.0.2.
+    "syshttp>=0.1.0.dev7,<0.2",
     # Proxy entries, lookup, Probed and BypassRules (routing.py).
-    "proxylib>=2.0,<3",
+    "proxylib>=2.0.2,<3",
     # duho.Meta replaced duho.NS in 0.7.
     "duho>=0.7.4,<0.8",
 ]
@@ -44,7 +44,7 @@ dev = ["curlike[dns]", "build", "pytest", "black"]
 docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]"]
 
 [project.scripts]
-pycurl = "curlike.shim:main"
+pycurl = "curlike:main"
 
 [project.urls]
 Homepage = "https://github.com/jose-pr/curlike"

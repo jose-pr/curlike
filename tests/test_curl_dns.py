@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from curlike import shim as curl
+import curlike as curl
 from test_curl_options import pki  # noqa: F401  (fixture reused)
 from test_proxy_auth import _clean_env, _fallback  # noqa: F401  (autouse fixture reused)
 
@@ -204,9 +204,8 @@ REAL = curl.find_real_curl()
 def _run(argv, real):
     env = {k: v for k, v in os.environ.items() if "proxy" not in k.lower()}
     env["PATH"] = os.path.dirname(REAL) + os.pathsep + env.get("PATH", "") if real else str(Path(__file__).parent)
-    p = subprocess.run(
-        [sys.executable, "-m", "curlike"] + argv, capture_output=True, env=env, timeout=60, stdin=subprocess.DEVNULL
-    )
+    command = [REAL] if real else [sys.executable, "-m", "curlike"]
+    p = subprocess.run(command + argv, capture_output=True, env=env, timeout=60, stdin=subprocess.DEVNULL)
     return p.returncode, p.stdout
 
 

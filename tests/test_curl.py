@@ -1,4 +1,4 @@
-"""curl shim: real-curl-first path + PATH-stripped stdlib fallback returns 200.
+"""curlike: the stdlib curl returns 200.
 
 No real internet: the fallback is exercised against a local HTTP fixture server
 bound to 127.0.0.1; the real-curl path is mocked (shutil.which + subprocess.run).
@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from curlike import shim as curl
+import curlike as curl
 
 
 # --------------------------------------------------------------------------
@@ -55,40 +55,6 @@ def server():
     finally:
         httpd.shutdown()
         httpd.server_close()
-
-
-# --------------------------------------------------------------------------
-# 1. Real-curl-first path.
-# --------------------------------------------------------------------------
-def test_prefers_real_system_curl(monkeypatch):
-    calls = {}
-
-    monkeypatch.setattr(curl, "find_real_curl", lambda *a: "/usr/bin/curl")
-
-    class _Res:
-        returncode = 0
-
-    def _fake_run(cmd, *a, **k):
-        calls["cmd"] = cmd
-        return _Res()
-
-    monkeypatch.setattr(curl.subprocess, "run", _fake_run)
-
-    rc = curl.main(["https://example.com"])
-    assert rc == 0
-    # It delegated to the real curl binary with the original argv.
-    assert calls["cmd"][0] == "/usr/bin/curl"
-    assert calls["cmd"][1:] == ["https://example.com"]
-
-
-def test_real_curl_exit_code_propagates(monkeypatch):
-    monkeypatch.setattr(curl, "find_real_curl", lambda *a: "/usr/bin/curl")
-
-    class _Res:
-        returncode = 22
-
-    monkeypatch.setattr(curl.subprocess, "run", lambda *a, **k: _Res())
-    assert curl.main(["https://example.com"]) == 22
 
 
 # --------------------------------------------------------------------------

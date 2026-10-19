@@ -2,8 +2,8 @@
 
 ``<P>_CURL_COMPAT`` (``SYSHTTP_CURL_COMPAT`` by default; the prefix
 is syshttp's, see ``syshttp.env``) names a curl version (``8.19``, ``8.19.0``) or ``auto``
-(the default): the version of the real curl on PATH -- the shim serves a
-prefix-gateway request from the fallback even when curl is installed -- else
+(the default): the version of the real curl on PATH -- a launcher serves a
+prefix-gateway request from curlike even when curl is installed -- else
 :data:`NEWEST`. Read lazily: only a version-dependent answer asks for it.
 
 The differences, measured against curl's own builds (8.17-8.22, Windows)
@@ -77,11 +77,11 @@ _cached: Dict[str, Tuple[int, int, int]] = {}
 
 
 def find_real_curl(skip=None):
-    """The system curl, or ``None`` -- never a copy of the shim. PATH is
+    """The system curl, or ``None`` -- never a launcher of curlike. PATH is
     walked directory by directory, skipping ``skip``, any hit that is not
     actually inside the directory searched (Windows ``which`` on Python <
     3.12 consults the cwd too) and any hit with a ``curl.py`` beside it (a
-    copy of the shim: the overlay's ``bin/`` is on PATH in a session)."""
+    launcher: the dotagents net overlay's ``bin/`` is on PATH in a session)."""
     for directory in os.environ.get('PATH', '').split(os.pathsep):
         if not directory:
             continue
