@@ -38,6 +38,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - CI installs syshttp at one pinned commit (the 0.1.0.dev7 floor) in every
   workflow, so a run is reproducible and the floors job tests the floor.
 
+- There is no hidden 30 s time limit: --connect-timeout bounds the connect
+  only, -m is a deadline for the whole attempt (redirect hops and a trickling
+  body included), and --timeout (not a curl option) is opt-in. -N is real, and
+  the "Output written to FILE" line, which curl never prints, is gone.
+
 ### Removed
 
 - `<P>_CURL_COMPAT` and the per-version answers behind it (`curlike.compat`):
@@ -114,4 +119,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   domain-match, or a public suffix, and a cookie with no Path gets the
   directory of the request (RFC 6265, through syshttp 0.1.0.dev14, now the
   floor).
+
+- The body is streamed, not held in memory (a 200 MB download peaks near 40
+  MB, not 470 MB, and the first byte reaches stdout at once): --max-filesize
+  stops a body of unknown length at the cap, --compressed decodes piece by
+  piece, and -T reads its file as it sends it.
+
+- Response limits are curl's: headers over 300 KB are exit 56, over 5000
+  headers exit 100, a conflicting or negative Content-Length or a NUL in a
+  header exit 8. http.client's limits and socket.getaddrinfo are no longer
+  replaced for the length of a transfer (concurrent calls cannot leave them
+  changed).
+
+- A 206 answering -C must start at the resume offset or it is exit 33 (the
+  file is left alone), and --remove-on-error removes a file the failed
+  transfer overwrote; with -C it is exit 2, as in curl.
+
+- --retry covers a name that does not resolve and, under --retry-all-errors, a
+  body cut short; every failed attempt prints its error line; the warning
+  reads "Retrying in N seconds" (curl 8.21); a Retry-After of 0 is none, and
+  one past --retry-max-time ends the retries with curl's warning.
 
