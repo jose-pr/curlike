@@ -85,7 +85,7 @@ def test_fallback_include_headers(server, monkeypatch, capsysbinary):
     rc = curl.main(["-i", server + "/"])
     assert rc == 0
     out = capsysbinary.readouterr().out
-    assert out.startswith(b"HTTP/1.1 200")
+    assert out.startswith(b"HTTP/1.0 200")
     assert b"hello" in out
 
 

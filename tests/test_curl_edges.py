@@ -106,7 +106,7 @@ def test_an_http_error_status_is_a_response_not_a_failure(origin, monkeypatch, c
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", origin + "/404"])
     assert rc == 0 and out.out == b"nope"
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "-i", origin + "/redirect"])
-    assert rc == 0 and out.out.startswith(b"HTTP/1.1 302")
+    assert rc == 0 and out.out.startswith(b"HTTP/1.0 302")
 
 
 def test_fail_flag_is_exit_22_without_a_body(origin, monkeypatch, capsysbinary):
@@ -145,7 +145,7 @@ def test_version_answers(monkeypatch, capsysbinary):
 
 def test_head_prints_the_headers_by_itself(origin, monkeypatch, capsysbinary):
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "-I", origin + "/x"])
-    assert rc == 0 and out.out.startswith(b"HTTP/1.1 200") and b"hello" not in out.out
+    assert rc == 0 and out.out.startswith(b"HTTP/1.0 200") and b"hello" not in out.out
     assert _Edge.seen[-1][0] == "HEAD"
 
 

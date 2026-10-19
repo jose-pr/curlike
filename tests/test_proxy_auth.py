@@ -201,7 +201,7 @@ def test_fallback_url_userinfo_as_basic(target, proxy, monkeypatch, capsysbinary
 def test_fallback_without_credential_is_refused_by_the_proxy(target, proxy, monkeypatch, capsysbinary):
     monkeypatch.setenv("SYSHTTP_PROXY", "http://" + proxy)
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "-i", target + "/x"])
-    assert rc == 0 and out.out.startswith(b"HTTP/1.1 407"), "a 407 is a response curl prints, exit 0"
+    assert rc == 0 and out.out.startswith(b"HTTP/1.0 407"), "a 407 is a response curl prints, exit 0"
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "-f", target + "/x"])
     assert rc == 22 and out.out == b"", "-f makes it curl's exit 22"
 
@@ -218,7 +218,7 @@ def test_fallback_explicit_proxy_never_borrows_the_agent_credential(target, prox
     monkeypatch.setenv("SYSHTTP_PROXY_AUTH", BASIC)
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "-i", "-x", "http://" + proxy, target + "/x"])
     assert rc == 0 and out.out.startswith(
-        b"HTTP/1.1 407"
+        b"HTTP/1.0 407"
     ), "-x names a different proxy; the agent proxy's credential is not its"
 
 
