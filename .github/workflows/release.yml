@@ -15,6 +15,10 @@ on:
 permissions:
   contents: read
 
+# The syshttp commit of 0.1.0.dev7, the floor in pyproject.toml; bump it with the floor.
+env:
+  SYSHTTP_REF: 475bdd67373d4a5ffac779d97f7ee1ad9d2f6920
+
 jobs:
   test:
     name: Test (py${{ matrix.python-version }}, ${{ matrix.os }})
@@ -30,7 +34,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install syshttp from its repository (not yet on PyPI)
-        run: python -m pip install "syshttp @ git+https://github.com/jose-pr/syshttp@main"
+        run: python -m pip install "syshttp @ git+https://github.com/jose-pr/syshttp@${{ env.SYSHTTP_REF }}"
       - name: Install package with all extras
         run: python -m pip install -e ".[dev,dns]"
       - name: Run tests
@@ -69,7 +73,7 @@ jobs:
           open("floors.txt", "w").write("\n".join(pins) + "\n")
           print("\n".join(pins) or "(no floors declared)")
       - name: Install syshttp from its repository (not yet on PyPI)
-        run: python -m pip install "syshttp @ git+https://github.com/jose-pr/syshttp@main"
+        run: python -m pip install "syshttp @ git+https://github.com/jose-pr/syshttp@${{ env.SYSHTTP_REF }}"
       - name: Install at the floors
         run: python -m pip install -c floors.txt -e ".[dev,dns]"
       - name: Run tests
@@ -169,7 +173,7 @@ jobs:
         with:
           python-version: "3.x"
       - name: Install syshttp from its repository (not yet on PyPI)
-        run: python -m pip install "syshttp @ git+https://github.com/jose-pr/syshttp@main"
+        run: python -m pip install "syshttp @ git+https://github.com/jose-pr/syshttp@${{ env.SYSHTTP_REF }}"
       - name: Install package with docs tooling
         run: python -m pip install -e ".[dev,docs,dns]"
       - name: Build docs (gate only)
