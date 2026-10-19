@@ -140,3 +140,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   reads "Retrying in N seconds" (curl 8.21); a Retry-After of 0 is none, and
   one past --retry-max-time ends the retries with curl's warning.
 
+- --crlfile loads only the CRLs of its file: a CA certificate inside it is no
+  longer trusted (a file with no CRL is exit 82). The contexts curlike builds
+  no longer apply Python 3.13's strict X.509 checks, so a leaf with no
+  Authority Key Identifier verifies as it does with curl and on older Pythons.
+
+- --proxy-pinnedpubkey is checked on a proxy connection reopened after a 407,
+  and --pinnedpubkey, -0, --interface, --local-port and the -w timings apply
+  over --unix-socket (it now goes through the one connector); a CONNECT
+  carries a single Host line on Python 3.12+; an over-long SOCKS5 user name,
+  password or host name is exit 97; an unreadable --pinnedpubkey file no
+  longer fails an http:// transfer; --doh-url with an unusable --cacert fails
+  the lookup (77) instead of falling back to the OS store.
+
