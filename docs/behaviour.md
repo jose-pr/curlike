@@ -223,9 +223,21 @@
   - `-d` repeats and joins with `&`; `@file` reads a file (CR/LF stripped, as
     curl does), `@-` stdin; `--data-binary` keeps bytes as they are; a body
     without a `Content-Type` gets `application/x-www-form-urlencoded`.
-  - `-H 'Name: v'` sets, `-H 'Name:'` removes the header (urllib's own defaults
-    included), `-H 'Name;'` sends it empty, `-H @file` one header per line. `-u user:pass` is Basic, `-e` the
-    Referer, `--compressed` asks for gzip/deflate and decodes the body.
+  - **Request headers**: a request carries `Host`, `User-Agent: curl/8.22.0`
+    (`-A` replaces it) and `Accept: */*`, and `Connection: close` — the one
+    difference from curl, which keeps the connection: a transfer is one request
+    on one connection here. `-H 'Name: v'` sets a header (replacing only a
+    default of that name); given again it sends another line; `-H 'Name:'`
+    removes it, `Host`, `Connection`, `Accept-Encoding` and `Content-Type`
+    included; `-H 'Name;'` sends it empty; `-H @file` is one header per line.
+    Header values (`-H`, `-A`, `-e`, `-b`) go out as the UTF-8 bytes of what
+    was typed. `-u user:pass` is Basic, `-e` the Referer, `--compressed` asks
+    for gzip/deflate and decodes the body. A response's header bytes are
+    written back as they came by `-i`, `-D` and `%header{}`, with the status
+    line's HTTP version (`HTTP/1.0` for a 1.0 reply); `-w @file` is read and
+    written as bytes. A URL with a space or a control character is exit 3
+    before anything is sent; non-ASCII characters in it are sent as their
+    percent-encoded UTF-8 (a host name as IDNA).
   - `-b <file>` sends only the rows that apply to the URL — domain (the leading
     dot or the `TRUE` flag covers subdomains), path, `Secure` only over https,
     not expired, `#HttpOnly_` rows included — so a jar with several hosts never

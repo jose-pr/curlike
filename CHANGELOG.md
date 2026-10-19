@@ -43,6 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   body included), and --timeout (not a curl option) is opt-in. -N is real, and
   the "Output written to FILE" line, which curl never prints, is gone.
 
+- The default request is curl's: User-Agent: curl/8.22.0 and Accept: */*, and
+  no Accept-Encoding: identity. Connection: close remains, the one difference,
+  because each transfer is one request on one connection.
+
 ### Removed
 
 - `<P>_CURL_COMPAT` and the per-version answers behind it (`curlike.compat`):
@@ -152,4 +156,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   password or host name is exit 97; an unreadable --pinnedpubkey file no
   longer fails an http:// transfer; --doh-url with an unusable --cacert fails
   the lookup (77) instead of falling back to the OS store.
+
+- -H sends a repeated name once per value, replaces only a default of the same
+  name, and -H 'Name:' removes Host, Connection, Accept-Encoding and Content-
+  Type too, as the header always claimed. Header values go out as UTF-8 (they
+  were refused or sent as latin-1), and response header bytes are written back
+  unchanged by -i, -D and -w, with the status line's HTTP version; -w @file is
+  read and written as bytes. A URL with a space or control character is exit 3
+  (not 8) and nothing is sent; non-ASCII characters in a URL are sent percent-
+  encoded as UTF-8 (a host as IDNA) instead of exit 2.
 
