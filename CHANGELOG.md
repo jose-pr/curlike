@@ -35,6 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `curlike.caller_steering()`, `requested_url()`, `find_real_curl()` and
   `describe_curl()`.
 
+- CI installs syshttp at one pinned commit (the 0.1.0.dev7 floor) in every
+  workflow, so a run is reproducible and the floors job tests the floor.
+
 ### Removed
 
 - `<P>_CURL_COMPAT` and the per-version answers behind it (`curlike.compat`):
