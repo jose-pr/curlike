@@ -86,3 +86,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   give up with exit 7.
 
 [Unreleased]: https://github.com/jose-pr/curlike/commits/main
+
+- -L follows redirects in curlike's own loop, as curl does: 50 hops by default
+  (--max-redirs -1 is unlimited, 0 refuses the first; exit 47 past the limit);
+  a redirect to ftp:// is exit 1 instead of a direct connection outside the
+  proxy and every connection option, and file:// or gopher:// are exit 1; a -H
+  Host goes only to the first request's host; -D and -i show every hop's
+  headers; -e 'URL;auto' sets each hop's Referer to the page it came from;
+  --location-trusted implies -L.
+
+- With the cookie engine (-b FILE or -c), the cookies a redirect hop sets are
+  sent to the next hop and filed under that hop's host, not the first URL's.
+

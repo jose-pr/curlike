@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "curlike"
-version = "0.1.0.dev7"
+version = "0.1.0.dev8"
 authors = [{ name = "jose-pr", email = "jose-pr@coqui.dev" }]
 description = "A drop-in curl: the real curl when there is one, with syshttp's proxy and hooks applied, else a curl-compatible command over the standard library"
 readme = "README.md"
