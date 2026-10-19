@@ -6,14 +6,12 @@
 
 ## Layout
 
-- `src/curlike/shim.py` — the drop-in curl: hook wrapper, real curl with the
-  proxy added, else the fallback. `__main__.py` runs it.
-- `src/curlike/__init__.py` — the fallback's `main` / `run_fallback`. The
+- `src/curlike/__init__.py` — `main` / `run_fallback` (what `pycurl` and `__main__.py` run) and the launcher helpers. The
   options are duho mixin groups, one module per group (`request`, `body`,
   `output`, `writeout`, `tls`, `connection`, `cookies`), composed in
   `options.CurlCmd`. `transfer` runs the request; `compat` holds every answer
   that differs between curl versions; `unsupported` declares the refused flags.
-- `tests/` — pytest. `test_curl_parity.py` runs the fallback and the real curl
+- `tests/` — pytest. `test_curl_parity.py` runs curlike and the real curl
   on the same command against raw-socket servers, and is skipped without a
   real curl. `test_proxy_auth.py` and `test_jars_proxy.py` hold fake proxies
   and gateways that other modules import.

@@ -6,24 +6,20 @@
     pycurl -s -o out.json -H 'Accept: application/json' https://api.example.com/x
     pycurl -X POST -d '{"k":1}' -H 'Content-Type: application/json' https://h/api
 
-- **It uses the configured proxy either way.** Real curl reads only the global
-  `http_proxy` vars, never `<P>_PROXY`, so when `<P>_PROXY` is set and you
-  did not name a proxy (`-x`) or a bypass list (`--noproxy`), the shim prepends
-  `--proxy` plus `--proxy-header 'Proxy-Authorization: …'` (or `--proxy-user`
-  for URL userinfo). Your own `-U user:pass` keeps the configured proxy and replaces
-  its credential. A **`prefix` gateway is served by the fallback**, not real
-  curl: curl cannot express `<proxy><endpoint><url>` per hop (multi-URL, `-L`,
-  config files), so the shim speaks the gateway itself and flags it lacks fail
-  loud. The fallback resolves the proxy exactly like `syshttp` (`<P>_PROXY`,
-  then the global vars; credential and type as below), re-decides **every
-  redirect hop** (proxied again, or direct without the credential for a
-  `NO_PROXY` host) and honours `NO_PROXY`. `-x` names a proxy of your own
-  (always `connect`, never given the configured proxy's credential); `--noproxy`
-  (`*` or a host list) replaces `NO_PROXY`, as in curl. A malformed
-  `<P>_PROXY`/`<P>_PROXY_TYPE` never blocks real curl (one warning, argv
-  as typed); the fallback, which would have to use it, exits 2.
-- **`-q` / `--disable`** must be curl's FIRST argument to skip `.curlrc`, so
-  the shim keeps a leading one first when it adds the proxy options.
+- **The proxy is syshttp's**: `<P>_PROXY` (credential and type as syshttp
+  documents them), then the request scheme's `*_PROXY` variable, then the
+  system's configuration for each URL on the command line (WinHTTP,
+  CFNetwork, libproxy, PAC, WPAD; `<P>_SYSTEM_PROXY=0` turns it off; with
+  `HTTP_PROXY_AUTH` as its header). Of a list the first proxy that accepts a
+  connection is used; when none does and the list holds no DIRECT, exit 7
+  (`curl: (7) no proxy of the list is reachable: …`); a lone proxy is not
+  probed. **Every redirect hop** is decided again (proxied, or direct without
+  the credential for a `NO_PROXY` host); loopback is proxied unless listed, as
+  in curl. A `prefix` gateway is spoken per hop. `-x` names a proxy of your
+  own (always `connect`, never given the configured credential); `--noproxy`
+  (`*` or a host list) replaces `NO_PROXY`, as in curl; `-U` replaces the
+  credential. A malformed `<P>_PROXY`/`<P>_PROXY_TYPE` that would be used is
+  exit 2.
 - Supported (`curl -h` lists them): request `-X -G --url --url-query -H -A -e
   -r --compressed --request-target --proto --proto-redir --proto-default --path-as-is`; auth `-u --basic --digest --anyauth --oauth2-bearer -n --netrc-file
   --netrc-optional` and `user:pw@` in the URL; body `-d --data-ascii --data-raw
@@ -212,29 +208,14 @@
 - **Unsupported flags fail loud** (`curl: (2) Unsupported options: --http2`, exit
   2) rather than silently do the wrong thing — that guard is deliberate. If you
   hit one, call real `curl`.
-- **`<P>_CURL_SSL_REVOKE`** — certificate revocation for a real curl on
-  Windows' Schannel (Git Bash's curl, `System32\curl.exe`), which checks it and
-  fails with exit 60 ("the revocation status is unknown") when a certificate's
-  revocation list is missing or unreachable — common behind a TLS-inspecting
-  proxy — while OpenSSL curls (Linux, macOS) never check. `best-effort`
-  (default) adds `--ssl-revoke-best-effort`: a list that is there is checked, a
-  missing one is not a failure. `false` adds `--ssl-no-revoke`, `true` adds
-  nothing. Only for a Schannel curl, and never when the command names
-  `--ssl-no-revoke` / `--ssl-revoke-best-effort` itself. curl has no such
-  option for an `https://` proxy's own
-  certificate: through one whose certificate has no revocation list, a
-  Schannel curl fails whatever is set (the fallback does not: `<P>_CURL=` cannot
-  help, but removing the real curl from PATH, or an OpenSSL curl, does). The fallback checks no revocation (as OpenSSL curl) unless
-  `--crlfile`.
-- **`<P>_CURL_COMPAT`** — the curl version the fallback answers as where curl
+- **Revocation**: curlike checks no certificate revocation (as an OpenSSL
+  curl) unless `--crlfile`.
+- **`<P>_CURL_COMPAT`** — the curl version curlike answers as where curl
   versions disagree (`8.19`, `8.19.0`), or `auto` (default): the real curl on
   PATH, else the newest measured (8.22). It changes only the answers listed in
   `curlike.compat`, each measured against curl's own builds; an
   unreadable value is exit 2.
-- **`<P>_CURL=0`** (or `n`/`no`/`false`/`off`) runs the real curl exactly as
-  typed — no configured proxy, no hooks, no fallback; exit 2 if there is none. Unset
-  or `1`/`y` is the shim.
-- Fallback TLS verifies against the **OS trust store** — `syshttp.tls`, the
+- TLS verifies against the **OS trust store** — `syshttp.tls`, the
   same store the requests session uses — unless `--cacert` / `--capath` or
   `$CURL_CA_BUNDLE` name one, which replaces it as in curl; `-k/--insecure`
   disables verification. `--cert file[:password]` (the file may hold the key),

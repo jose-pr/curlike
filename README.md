@@ -6,20 +6,15 @@
 [![Docs](https://img.shields.io/badge/docs-latest-blue.svg)](https://jose-pr.github.io/curlike/)
 [![CI](https://img.shields.io/github/actions/workflow/status/jose-pr/curlike/test.yml)](https://github.com/jose-pr/curlike/actions/workflows/test.yml)
 
-**A `curl` that works everywhere Python does.** With a real curl on PATH,
-`pycurl` runs it with your configured proxy and its credential added. Without
-one, it serves the request itself: a curl-compatible command over the
-standard library, with curl's exit codes and messages, checked line for line
-against real curl. Documentation: <https://jose-pr.github.io/curlike/>.
+**A `curl` that works everywhere Python does.** `pycurl` is a
+curl-compatible command in pure Python, over the standard library, with
+curl's exit codes and messages, checked line for line against real curl; and
+`curlike` is the library behind it. It never runs the real curl.
+Documentation: <https://jose-pr.github.io/curlike/>.
 
 ## Features
 
-- **Real curl first** — your argv and exit code go through unchanged. The
-  one addition is the proxy [syshttp](https://github.com/jose-pr/syshttp)
-  picks, as `--proxy` plus `--proxy-header`: `SYSHTTP_PROXY`, or with no
-  proxy variable set the system's own configuration for the URL (PAC and WPAD
-  included), neither of which real curl reads.
-- **A fallback that answers as curl does** — the common surface (request,
+- **Answers as curl does** — the common surface (request,
   auth, body, output, downloads, TLS, proxies including SOCKS and https
   proxies, redirects, cookies, `-w`, `--retry`). The exit codes and messages
   are measured against curl's own builds, and the version it imitates is
@@ -29,9 +24,10 @@ against real curl. Documentation: <https://jose-pr.github.io/curlike/>.
 - **Your own TLS context** — from Python, `curlike.main(argv, ssl_context=...)`
   runs the curl command line over a context you built: mutual TLS with a
   keystore identity, a cipher list, a pinned protocol version.
-- **Prefix gateways and URL hooks** — syshttp's `prefix[:/endpoint]` proxy
-  type and `SYSHTTP_HOOKS_<KEY>_CURL` wrappers work the same way here as in
-  an syshttp session.
+- **The system's proxy** — [syshttp](https://github.com/jose-pr/syshttp)
+  routes it: `SYSHTTP_PROXY`, the `*_PROXY` variables, else the system's
+  configuration for the URL (PAC and WPAD included), its `prefix[:/endpoint]`
+  gateways included.
 
 ## Installation
 
@@ -46,12 +42,12 @@ pip install curlike
 ## Quick start
 
 ```python
-from curlike.shim import main
+import curlike
 
-rc = main(["-s", "-o", "page.html", "https://example.com/"])
+rc = curlike.main(["-s", "-o", "page.html", "https://example.com/"])
 ```
 
-Mutual TLS with a context of your own (the fallback serves it):
+Mutual TLS with a context of your own:
 
 ```python
 import ssl
@@ -74,10 +70,9 @@ python -m curlike -X POST --json '{"k":1}' https://httpbin.org/post
 
 | Module | Purpose |
 | --- | --- |
-| `curlike.shim` | `main()`: the drop-in curl (hooks, real curl, fallback) |
-| `curlike` | `main()` / `run_fallback()`: the fallback by itself |
+| `curlike` | `main()` / `run_fallback()`: the command; `caller_steering()`, `requested_url()`, `find_real_curl()`, `describe_curl()` for a launcher |
 
-The other modules hold the fallback's option groups and transfer machinery
+The other modules hold the command's option groups and transfer machinery
 and are private.
 
 ## Settings
@@ -86,9 +81,7 @@ and are private.
 
 | Variable | Sets |
 | --- | --- |
-| `<P>_CURL` | `0`/`no`/`off`: run the real curl exactly as typed |
-| `<P>_CURL_COMPAT` | the curl version the fallback answers as (default: the real curl's, else 8.22) |
-| `<P>_CURL_SSL_REVOKE` | `best-effort` (default), `true`, `false`: revocation for a Schannel curl |
+| `<P>_CURL_COMPAT` | the curl version curlike answers as (default: the real curl's, else 8.22) |
 | `<P>_PYTHON` | the interpreter a `.py` hook wrapper runs under |
 | `<P>_PYLIB` | where to find duho when it is not installed |
 
@@ -100,7 +93,7 @@ dotagents pyvenv            # or any Python 3.9+ virtual environment
 .pyvenv/<tag>/Scripts/python -m pytest -q
 ```
 
-The parity tests compare the fallback with the real curl on PATH, and are
+The parity tests compare curlike with the real curl on PATH, and are
 skipped when there is none.
 
 ### Releasing

@@ -30,7 +30,6 @@ nav:
   - Home: index.md
   - Behaviour: behaviour.md
   - API Reference:
-      - curlike.shim: api/shim.md
       - curlike: api/fallback.md
   - Changelog: changelog.md
 

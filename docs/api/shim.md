@@ -1,3 +1,0 @@
-# `curlike.shim`
-
-::: curlike.shim

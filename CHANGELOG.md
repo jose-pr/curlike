@@ -27,6 +27,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- curlike is a pure-Python curl and never runs the real one: `pycurl` and
+  `python -m curlike` are `curlike.main`. The launcher that prefers the real
+  curl -- hook wrappers, the agent proxy handed to curl as `--proxy`, the
+  `<P>_CURL`, `<P>_CURL_SSL_REVOKE` and `<P>_PYTHON` settings -- moved to the
+  dotagents net overlay (`lib/curlshim`). New for such a launcher:
+  `curlike.caller_steering()`, `requested_url()`, `find_real_curl()` and
+  `describe_curl()`.
+
+### Removed
+
+- `curlike.shim` (`main`, `default_entry`, `find_real_curl`): the dotagents
+  net overlay's `lib/curlshim` is the launcher now.
+
 - Routing comes from syshttp 0.1.0.dev6's `proxy.proxy_map()` over
   proxylib 2 (now a direct dependency): the `*_PROXY` variables are read per
   scheme, `NO_PROXY` takes CIDR entries, `HTTP_PROXY_AUTH` goes to the
