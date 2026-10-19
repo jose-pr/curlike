@@ -94,7 +94,9 @@ def build_ssl_context(
         # check needs OpenSSL to verify, over the system's store.
         ctx = ssl.create_default_context()
     else:
-        ctx = new_os_context()
+        # A client certificate of the caller's own is the one sent: the OS
+        # store offers none then.
+        ctx = new_os_context(client_certificates=not cert)
     if crlfile and not insecure:
         # curl's --crlfile: the chain is checked against these lists (82 when
         # the file cannot be loaded; a revoked certificate fails as 60).

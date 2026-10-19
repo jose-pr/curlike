@@ -36,8 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `SYSHTTP_PYTHON`, `AGENTS_PYLIB` → `SYSHTTP_PYLIB`. The proxy and hook
   variables are syshttp's (`SYSHTTP_PROXY`, `SYSHTTP_HOOKS_<KEY>_CURL`). With
   `SYSHTTP_PREFIX=AGENTS`, the `AGENTS_*` names are read instead.
-- The fallback verifies certificates through the operating system by default
-  (syshttp's truststore context on Python 3.10+). `--crlfile` keeps an OpenSSL
+- The fallback's TLS is the system's by default (syshttp's sslcontext system
+  context): the operating system verifies certificates on Python 3.10+, and a
+  server that asks for a client certificate gets one from the OS store, chosen
+  as a browser chooses. `--cert` turns the store off: the named certificate is
+  the one sent. `--crlfile` keeps an OpenSSL
   context, because the OS verifier ignores CRL flags.
 - A malformed proxy setting is reported as `curl: ignoring the configured
   proxy: …` (was `ignoring the agent proxy`).

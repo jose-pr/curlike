@@ -102,3 +102,24 @@ def test_insecure_never_uses_the_os_verifier(monkeypatch):
     monkeypatch.setattr(tls, "new_os_context", lambda *a, **k: pytest.fail("-k must not get the OS verifier"))
     ctx = tls.build_ssl_context(True)
     assert type(ctx) is ssl.SSLContext and ctx.verify_mode == ssl.CERT_NONE and not ctx.check_hostname
+
+
+@pytest.mark.parametrize("cert", [None, "client-rsa.pem"])
+def test_cert_turns_off_the_os_stores_client_certificates(monkeypatch, cert):
+    """A server asking for a client certificate gets one from the OS store,
+    unless --cert names one: then that one is sent, never a store's."""
+    from pathlib import Path
+
+    from curlike import tls
+
+    asked = []
+    real = tls.new_os_context
+
+    def new_os_context(*a, **k):
+        asked.append(k.get("client_certificates", True))
+        return real(*a, **k)
+
+    monkeypatch.setattr(tls, "new_os_context", new_os_context)
+    data = Path(__file__).parent / "data"
+    tls.build_ssl_context(False, cert=cert and str(data / cert), key=cert and str(data / "client-rsa.key"))
+    assert asked == [cert is None]

@@ -16,6 +16,18 @@ def _clean_settings(monkeypatch):
     from syshttp import proxy
 
     monkeypatch.setattr(proxy, "system_proxy_map", lambda: None)
+    # Nor its certificate store and smart cards when a server asks for a client
+    # certificate; the OS still verifies servers.
+    import sslcontext
+
+    real = sslcontext.system_context
+
+    def system_context(*, selector=None, **kwargs):
+        if selector is None or selector is True:
+            selector = sslcontext.ClientCertificateSelector([])
+        return real(selector=selector, **kwargs)
+
+    monkeypatch.setattr(sslcontext, "system_context", system_context)
 
 
 @pytest.fixture(autouse=True)

@@ -314,9 +314,11 @@ another. The proxy settings (`<P>_PROXY`, `<P>_PROXY_AUTH`,
 - **`<P>_CURL=0`** (or `n`/`no`/`false`/`off`) runs the real curl exactly as
   typed — no configured proxy, no hooks, no fallback; exit 2 if there is none. Unset
   or `1`/`y` is the shim.
-- Fallback TLS is verified by the **operating system** — `syshttp.tls`, a
-  truststore context on Python 3.10+ (CryptoAPI, the Security framework),
-  the same the requests session uses; `--crlfile` keeps an OpenSSL context
+- Fallback TLS is the **system's** — `syshttp.tls` (sslcontext's system
+  context: the OS verifies servers on Python 3.10+, CryptoAPI or the Security
+  framework), the same the requests session uses; a server that asks for a
+  client certificate gets one from the OS store (smart cards included), chosen
+  as a browser chooses, unless `--cert` names one; `--crlfile` keeps an OpenSSL context
   over the system store, since the OS verifier ignores CRL flags — unless `--cacert` / `--capath` or
   `$CURL_CA_BUNDLE` name one, which replaces it as in curl; `-k/--insecure`
   disables verification. `--cert file[:password]` (the file may hold the key),
