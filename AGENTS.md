@@ -29,7 +29,7 @@ until they are on PyPI at the versions declared:
 ## Checks
 
 ```bash
-.pyvenv/<tag>/Scripts/python -m pytest -q        # about 5 minutes; warnings are errors but ResourceWarning
+.pyvenv/<tag>/Scripts/python -m pytest -q        # about 7 minutes; warnings are errors but ResourceWarning
 .pyvenv/<tag>/Scripts/python -m black --check src tests
 ```
 
@@ -40,7 +40,10 @@ until they are on PyPI at the versions declared:
   of curl's exit-23 messages applies.
 - A version-dependent answer goes in `compat`, measured against a real curl
   build, never inferred from curl's source alone.
-- Settings are read through `syshttp.env.HTTPEnv`, never `os.environ` by name.
+- Settings are read through `syshttp.env.HTTPEnv`, never `os.environ` by name:
+  each is a full variable name read under every prefix of `SYSHTTP_PREFIX`.
+  curl's own variables (`CURL_CA_BUNDLE`, `HOME`, `COLUMNS`) are read as curl
+  names them, under no prefix.
 
 ## Releasing
 

@@ -1,15 +1,22 @@
 # Behaviour
 
-`<P>` is syshttp's settings prefix: `SYSHTTP` unless `SYSHTTP_PREFIX` names another.
+Settings are syshttp's variables, each with a full name (`SYSHTTP_PROXY`,
+`HTTPS_PROXY`, `NO_PROXY`) read under every prefix of `SYSHTTP_PREFIX`, a
+`:`-separated list of literal prefixes (none by default: the names as
+written). `SYSHTTP_PREFIX=AGENTS_` reads `AGENTS_SYSHTTP_PROXY`,
+`AGENTS_HTTPS_PROXY` and `AGENTS_NO_PROXY` and nothing unprefixed; `AGENTS_:`
+falls back to the plain names. curl's own variables (`CURL_CA_BUNDLE`) are
+read as curl names them, whatever the prefix. `CURLIKE_PYLIB` names where to
+find duho when it is not installed.
 
     pycurl https://example.com
     pycurl -s -o out.json -H 'Accept: application/json' https://api.example.com/x
     pycurl -X POST -d '{"k":1}' -H 'Content-Type: application/json' https://h/api
 
-- **The proxy is syshttp's**: `<P>_PROXY` (credential and type as syshttp
+- **The proxy is syshttp's**: `SYSHTTP_PROXY` (credential and type as syshttp
   documents them), then the request scheme's `*_PROXY` variable, then the
   system's configuration for each URL on the command line (WinHTTP,
-  CFNetwork, libproxy, PAC, WPAD; `<P>_SYSTEM_PROXY=0` turns it off; with
+  CFNetwork, libproxy, PAC, WPAD; `SYSHTTP_SYSTEM_PROXY=0` turns it off; with
   `HTTP_PROXY_AUTH` as its header). Of a list the first proxy that accepts a
   connection is used; when none does and the list holds no DIRECT, exit 7
   (`curl: (7) no proxy of the list is reachable: …`); a lone proxy is not
@@ -18,8 +25,9 @@
   in curl. A `prefix` gateway is spoken per hop. `-x` names a proxy of your
   own (always `connect`, never given the configured credential); `--noproxy`
   (`*` or a host list) replaces `NO_PROXY`, as in curl; `-U` replaces the
-  credential. A malformed `<P>_PROXY`/`<P>_PROXY_TYPE` that would be used is
-  exit 2.
+  credential. A malformed `SYSHTTP_PROXY`/`SYSHTTP_PROXY_TYPE` that would be
+  used is exit 2, its message naming the variable found (under a prefix,
+  `AGENTS_SYSHTTP_PROXY_TYPE`), never a credential.
 - Supported (`curl -h` lists them): request `-X -G --url --url-query -H -A -e
   -r --compressed --request-target --proto --proto-redir --proto-default --path-as-is`; auth `-u --basic --digest --anyauth --oauth2-bearer -n --netrc-file
   --netrc-optional` and `user:pw@` in the URL; body `-d --data-ascii --data-raw
@@ -97,7 +105,7 @@
     with `-C`: exit 2).
   - **Proxies**: `-x` takes `http://` and `socks4://` / `socks4a://` /
     `socks5://` / `socks5h://` (`socks://` is SOCKS4), as does
-    `<P>_PROXY`; the `--socks*` flags name one too and override `-x`. A proxy
+    `SYSHTTP_PROXY`; the `--socks*` flags name one too and override `-x`. A proxy
     URL's path, query and fragment are ignored, as in curl.
     `socks5` and `socks4` resolve the name here, `socks5h` and `socks4a` let
     the proxy do it; SOCKS5 credentials come from `-U` or the URL. A SOCKS
@@ -182,7 +190,7 @@
     traceback). `-o /dev/null` is the null device on Windows too.
   - **`--retry N`** retries what curl calls transient — a timeout, a name that
     does not resolve and HTTP 408/429/500/502/503/504
-    (`syshttp.retry.TRANSIENT_STATUSES`, the list the requests session
+    (`syshttp.retry.TRANSIENT_STATUSES`, the list syshttp's client
     retries too) — after 1s, doubling (`--retry-delay` fixes it, a non-zero
     `Retry-After` wins; one that would pass `--retry-max-time` ends the
     retries with a warning); `--retry-connrefused` adds a refused
@@ -289,8 +297,9 @@
   was measured against, and follows new releases; it does not imitate older
   ones, whose exit codes, messages and `-w` variables differ in places.
 - TLS verifies against the **OS trust store** — `syshttp.tls`, the
-  same store the requests session uses — unless `--cacert` / `--capath` or
-  `$CURL_CA_BUNDLE` name one, which replaces it as in curl; `-k/--insecure`
+  same store syshttp's client uses — unless `--cacert` / `--capath` or
+  `$CURL_CA_BUNDLE` (curl's own variable, read as written: syshttp's
+  `CA_BUNDLE` is not it) name one, which replaces it as in curl; `-k/--insecure`
   disables verification. `--cert file[:password]` (the file may hold the key),
   `--key`, `--pass` present a client certificate, PEM only.
 - `-v` prints the request as given, so an `Authorization` or `Cookie` the caller set appears in it, as

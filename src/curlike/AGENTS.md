@@ -76,19 +76,24 @@ when it is installed is the dotagents net overlay's (`lib/curlshim`).
 
 ## Behaviour
 
-`<P>` is syshttp's settings prefix: `SYSHTTP` unless `SYSHTTP_PREFIX` names
-another. The proxy settings (`<P>_PROXY`, `<P>_PROXY_AUTH`,
-`<P>_PROXY_AUTH_HEADER`, `<P>_PROXY_TYPE`) are syshttp's. Its own API header
-documents them.
+Settings are syshttp's variables, each with a full name (`SYSHTTP_PROXY`,
+`HTTPS_PROXY`, `NO_PROXY`) read under every prefix of `SYSHTTP_PREFIX`, a
+`:`-separated list of literal prefixes (none by default: the names as
+written). `SYSHTTP_PREFIX=AGENTS_` reads `AGENTS_SYSHTTP_PROXY`,
+`AGENTS_HTTPS_PROXY` and `AGENTS_NO_PROXY` and nothing unprefixed; `AGENTS_:`
+falls back to the plain names. The proxy settings (`SYSHTTP_PROXY`,
+`SYSHTTP_PROXY_AUTH`, `SYSHTTP_PROXY_AUTH_HEADER`, `SYSHTTP_PROXY_TYPE`) are
+syshttp's: its own API header documents them. curl's own variables
+(`CURL_CA_BUNDLE`) are read as curl names them, whatever the prefix.
 
     curl https://example.com
     curl -s -o out.json -H 'Accept: application/json' https://api.example.com/x
     curl -X POST -d '{"k":1}' -H 'Content-Type: application/json' https://h/api
 
-- **The proxy is syshttp's**: `<P>_PROXY` (credential and type as syshttp
+- **The proxy is syshttp's**: `SYSHTTP_PROXY` (credential and type as syshttp
   documents them), then the request scheme's `*_PROXY` variable, then the
   system's configuration for each URL on the command line (WinHTTP,
-  CFNetwork, libproxy, PAC, WPAD; `<P>_SYSTEM_PROXY=0` turns it off; with
+  CFNetwork, libproxy, PAC, WPAD; `SYSHTTP_SYSTEM_PROXY=0` turns it off; with
   `HTTP_PROXY_AUTH` as its header). Of a list the first proxy that accepts a
   connection is used; when none does and the list holds no DIRECT, exit 7
   (`curl: (7) no proxy of the list is reachable: …`); a lone proxy is not
@@ -97,8 +102,9 @@ documents them.
   in curl. A `prefix` gateway is spoken per hop. `-x` names a proxy of your
   own (always `connect`, never given the configured credential); `--noproxy`
   (`*` or a host list) replaces `NO_PROXY`, as in curl; `-U` replaces the
-  credential. A malformed `<P>_PROXY`/`<P>_PROXY_TYPE` that would be used is
-  exit 2.
+  credential. A malformed `SYSHTTP_PROXY`/`SYSHTTP_PROXY_TYPE` that would be
+  used is exit 2, its message naming the variable found (under a prefix,
+  `AGENTS_SYSHTTP_PROXY_TYPE`), never a credential.
 - Supported (`curl -h` lists them): request `-X -G --url --url-query -H -A -e
   -r --compressed --request-target --proto --proto-redir --proto-default --path-as-is`; auth `-u --basic --digest --anyauth --oauth2-bearer -n --netrc-file
   --netrc-optional` and `user:pw@` in the URL; body `-d --data-ascii --data-raw
@@ -176,7 +182,7 @@ documents them.
     with `-C`: exit 2).
   - **Proxies**: `-x` takes `http://` and `socks4://` / `socks4a://` /
     `socks5://` / `socks5h://` (`socks://` is SOCKS4), as does
-    `<P>_PROXY`; the `--socks*` flags name one too and override `-x`. A proxy
+    `SYSHTTP_PROXY`; the `--socks*` flags name one too and override `-x`. A proxy
     URL's path, query and fragment are ignored, as in curl.
     `socks5` and `socks4` resolve the name here, `socks5h` and `socks4a` let
     the proxy do it; SOCKS5 credentials come from `-U` or the URL. A SOCKS
@@ -263,7 +269,7 @@ documents them.
     `-o /dev/null` is the null device on Windows too.
   - **`--retry N`** retries what curl calls transient — a timeout, a name that
     does not resolve and HTTP 408/429/500/502/503/504
-    (`syshttp.retry.TRANSIENT_STATUSES`, the list the requests session
+    (`syshttp.retry.TRANSIENT_STATUSES`, the list syshttp's client
     retries too) — after 1s, doubling (`--retry-delay` fixes it, a non-zero
     `Retry-After` wins; one that would pass `--retry-max-time` ends the
     retries with a warning); `--retry-connrefused` adds a refused
@@ -371,11 +377,12 @@ documents them.
   ones, whose exit codes, messages and `-w` variables differ in places.
 - TLS is the **system's** — `syshttp.tls` (sslcontext's system
   context: the OS verifies servers on Python 3.10+, CryptoAPI or the Security
-  framework), the same the requests session uses; a server that asks for a
+  framework), the same syshttp's client uses; a server that asks for a
   client certificate gets one from the OS store (smart cards included), chosen
   as a browser chooses, unless `--cert` names one; `--crlfile` keeps an OpenSSL context
   over the system store, since the OS verifier ignores CRL flags — unless `--cacert` / `--capath` or
-  `$CURL_CA_BUNDLE` name one, which replaces it as in curl; `-k/--insecure`
+  `$CURL_CA_BUNDLE` (curl's own variable, read as written: syshttp's
+  `CA_BUNDLE` is not it) name one, which replaces it as in curl; `-k/--insecure`
   disables verification. `--cert file[:password]` (the file may hold the key),
   `--key`, `--pass` present a client certificate, PEM only.
 - `-v` prints the request as given, so an `Authorization` or `Cookie` the caller set appears in it, as
@@ -385,11 +392,17 @@ documents them.
 
 | Variable | Sets | Default |
 | --- | --- | --- |
-| `<P>_PYLIB` | paths (`os.pathsep`-separated) to find duho in when it is not installed: for a host tool that runs curlike from a zipapp (`.pyz`) or a vendored directory | none |
-| `CURL_CA_BUNDLE` | curlike's CA bundle, as in curl | the OS trust store |
+| `SYSHTTP_PREFIX` | the prefixes every variable below but `CURL_CA_BUNDLE` is read under, `:`-separated, each literal; read as written | none (the names as written) |
+| `SYSHTTP_PROXY`, `SYSHTTP_PROXY_AUTH`, `SYSHTTP_PROXY_AUTH_HEADER`, `SYSHTTP_PROXY_TYPE`, `SYSHTTP_SYSTEM_PROXY` | syshttp's proxy, its credential, kind and system lookup | as syshttp documents them |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` (either case), `NO_PROXY` / `no_proxy`, `HTTP_PROXY_AUTH` | the machine's proxy, its bypass list and credential | none |
+| `CURLIKE_PYLIB` | paths (`os.pathsep`-separated) to find duho in when it is not installed: for a host tool that runs curlike from a zipapp (`.pyz`) or a vendored directory | none |
+| `CURL_CA_BUNDLE` | curlike's CA bundle, as in curl; read as written, under no prefix | the OS trust store |
 
-The proxy, its credential, its kind and `NO_PROXY` are read by syshttp under
-the same prefix.
+Every variable but `CURL_CA_BUNDLE` is read through syshttp's `HTTPEnv`: as
+`<PREFIX><NAME>` for each prefix in turn, each variable on its own, the first
+prefix that sets it winning. Under `SYSHTTP_PREFIX=AGENTS_` the proxy is
+`AGENTS_SYSHTTP_PROXY` or `AGENTS_HTTPS_PROXY`, the bypass list
+`AGENTS_NO_PROXY`, and the unprefixed variables are ignored.
 
 ## Gotchas
 

@@ -77,12 +77,18 @@ and are private.
 
 ## Settings
 
-`<P>` is syshttp's prefix (`SYSHTTP` unless `SYSHTTP_PREFIX` says otherwise).
+Every variable has a full name, read under each prefix of `SYSHTTP_PREFIX`
+(a `:`-separated list of literal prefixes; none by default, so the names as
+written): `SYSHTTP_PREFIX=AGENTS_` reads `AGENTS_SYSHTTP_PROXY`,
+`AGENTS_HTTPS_PROXY` and `AGENTS_NO_PROXY` and nothing unprefixed, `AGENTS_:`
+falls back to the plain names.
 
 | Variable | Sets |
 | --- | --- |
-| `<P>_PYTHON` | the interpreter a `.py` hook wrapper runs under |
-| `<P>_PYLIB` | where to find duho when it is not installed: for a host tool that runs curlike from a zipapp (`.pyz`) or a vendored directory |
+| `SYSHTTP_PREFIX` | the prefixes the variables below are read under (all but `CURL_CA_BUNDLE`) |
+| `SYSHTTP_PROXY` and the other `SYSHTTP_*` proxy settings, `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`, `NO_PROXY` | the proxy and its bypass list, as [syshttp](https://jose-pr.github.io/syshttp/) reads them |
+| `CURLIKE_PYLIB` | where to find duho when it is not installed: for a host tool that runs curlike from a zipapp (`.pyz`) or a vendored directory |
+| `CURL_CA_BUNDLE` | the CA bundle, as in curl: read as written, under no prefix |
 
 ## Development
 

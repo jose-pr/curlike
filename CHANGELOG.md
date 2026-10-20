@@ -60,6 +60,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   open, and the test configuration turns every warning, ResourceWarning
   included, into an error.
 
+- Settings are read as syshttp 0.1.0.dev19, the new floor, reads them: every
+  variable has a full name, read as `<PREFIX><NAME>` under each prefix of
+  `SYSHTTP_PREFIX`, a `:`-separated list of literal prefixes (none by default:
+  the names as written). Where the entries here write `<P>_NAME`, the
+  variable is `SYSHTTP_NAME`. `SYSHTTP_PREFIX=AGENTS_` (it was `AGENTS`) reads
+  `AGENTS_SYSHTTP_PROXY`, `AGENTS_HTTPS_PROXY`, `AGENTS_NO_PROXY` and
+  `AGENTS_HTTP_PROXY_AUTH` and nothing unprefixed: the conventional proxy
+  variables used to ignore the prefix, and now follow it. `AGENTS_:` reads the
+  prefixed names first and falls back to the plain ones. `CURL_CA_BUNDLE` is
+  curl's own variable and is read as curl names it, under no prefix.
+- `<P>_PYLIB` is `CURLIKE_PYLIB`, a full name read under each prefix like the
+  others; `SYSHTTP_PYLIB` is no longer read.
+- `no_proxy` is read before `NO_PROXY`, as curl does (it was the other way
+  round, which showed only when both were set to different lists).
+- A proxy setting that is refused (exit 2) names the variable that was found,
+  under its prefix: `AGENTS_SYSHTTP_PROXY_TYPE` for `SYSHTTP_PREFIX=AGENTS_`.
+- Cookies follow syshttp's stricter rules, which agree with curl 8.21 on the
+  cases measured: a `Set-Cookie` header with a control character (the tab
+  apart) is ignored whole, a `-b` file's row with one in its name or value is
+  skipped, and `-c` writes no row with a control character or a tab in a
+  field.
+- The syshttp floor is 0.1.0.dev19 (it was 0.1.0.dev14) and the CI workflows
+  install its commit.
+
 ### Removed
 
 - `<P>_CURL_COMPAT` and the per-version answers behind it (`curlike.compat`):
@@ -245,3 +269,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   is the proxy, as in curl, instead of exit 2 with a message that printed the
   password in full. A refused proxy setting never shows the password or the
   `-U` credential in its message.
+
+- A `-b` jar file is split into rows at a newline only (syshttp 0.1.0.dev19):
+  a value holding a vertical tab, a form feed or another character that
+  `str.splitlines` ends a line at could end its row early and start a row for
+  another domain. A row with a control character in its name or value is
+  skipped, as curl skips it.
