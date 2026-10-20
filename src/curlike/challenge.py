@@ -88,7 +88,7 @@ class ChallengeHandler(urllib.request.BaseHandler):
     """Answers a 401 (``proxy=False``) or a 407 (``proxy=True``) once with
     ``auth``. A request that already carries the credential, or a challenge
     nothing here can answer, leaves the response as it is. ``allowed(req)``
-    says whether the credential may go to this request's origin."""
+    says whether the credential may be sent with ``req`` at all."""
 
     def __init__(self, auth, proxy=False, allowed=None):
         self.auth = auth

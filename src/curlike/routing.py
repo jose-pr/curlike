@@ -210,6 +210,9 @@ class AgentProxyHandler(urllib.request.BaseHandler):
         self.proxy_auth = proxy_auth  # --proxy-digest / --proxy-anyauth (challenge.ChallengeAuth)
 
     def _apply(self, req):
+        if getattr(req, 'routed', False):
+            return req  # a handler that answers a challenge re-opens the request: its route stands
+        req.routed = True
         plan = self.plan
         if plan.bypasses(req.full_url):
             return req
@@ -241,6 +244,7 @@ class AgentProxyHandler(urllib.request.BaseHandler):
         if plan.endpoint is None and getattr(req, '_tunnel_host', None):
             req.tunnel_headers = for_proxy  # on the CONNECT alone
         else:
+            req.to_proxy = plan.endpoint is None  # its 407 is the proxy's; inside a tunnel it is the origin's
             for name, value in for_proxy.items():
                 req.add_unredirected_header(name, value)
         return req

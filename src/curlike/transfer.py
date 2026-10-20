@@ -241,7 +241,10 @@ def build_opener(args, plan, context, transfer, removed):
             )
         )
         if proxy_auth is not None:
-            handlers.append(ChallengeHandler(proxy_auth, proxy=True))  # plain proxying: a 407, answered once
+            # A 407 answered once, and only the proxy's own: not a direct origin's, nor one inside a tunnel.
+            handlers.append(
+                ChallengeHandler(proxy_auth, proxy=True, allowed=lambda req: getattr(req, 'to_proxy', False))
+            )
     if args.request_target:
         handlers.append(RequestTarget(args.request_target))
     handlers.append(RequestLog(transfer))
