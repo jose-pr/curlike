@@ -67,6 +67,8 @@ jobs:
         # Install every extra that has tests depending on it, or those tests
         # silently skip (pytest.importorskip) instead of actually running.
         run: python -m pip install -e ".[dev,dns]"
+      - name: Show the curl the parity tests compare with
+        run: python -c "from curlike import realcurl as r; p = r.find_real_curl(); print(p, p and r.describe(p))"
       - name: Run tests
         run: python -m pytest -q
 
