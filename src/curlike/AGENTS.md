@@ -148,8 +148,12 @@ documents them.
     curlike cannot answer is the response. `-n` without a netrc is exit 26.
   - **Downloads**: `-C -` resumes from the file's size (a server ignoring the
     range is exit 33, a 416 means already complete); `-J` takes the
-    `Content-Disposition` name without its directories and never overwrites
-    (exit 23); `-R` sets the mtime from `Last-Modified`; `-z DATE|FILE` (`-z
+    `Content-Disposition` `filename=` (at a parameter's start) without its
+    directories, as a Windows name curl would make it (`:<>"|?*` become `_`,
+    a device name like `CON` gets a `_`), and never overwrites (exit 23); `-O`
+    with no name in the URL writes the last non-empty path segment, else
+    `curl_response`; `--etag-save` is created before the transfer (26, "no
+    transfer performed", when it cannot be); `-R` sets the mtime from `Last-Modified`; `-z DATE|FILE` (`-z
     -DATE`: unmodified since) and `--etag-compare` make the request conditional,
     and an unmet condition or a 304 writes no file; `--no-clobber` writes
     `name.1`..`name.100`; `--max-filesize` over the limit is exit 63 (by
@@ -292,8 +296,13 @@ documents them.
     `-k`); `certs` / `num_certs` are empty. Any other variable (`certs`,
     `ssl_verify_result`, …) is refused before the request is sent. `-q` is a
     no-op (no `.curlrc` is read).
-  - `-d` repeats and joins with `&`; `@file` reads a file (CR/LF stripped, as
-    curl does), `@-` stdin; `--data-binary` keeps bytes as they are; a body
+  - `-d` repeats and joins with `&`; `@file` reads a file (CR, LF and NUL stripped,
+    as curl does; one it cannot read is exit 26 in curl's three lines), `@-`
+    stdin; `--json` pieces follow the previous piece with no `&`; `--data-urlencode`
+    and `--url-query` write a space as `+`; `-F` takes `@"file;name"` and
+    `;type=text/plain;charset=utf-8`, and a `.json` file is
+    `application/octet-stream`; `-T FILE` sends no `Content-Type` and adds the
+    file name only to a URL with no query; `--data-binary` keeps bytes as they are; a body
     without a `Content-Type` gets `application/x-www-form-urlencoded`.
   - **Request headers**: a request carries `Host`, `User-Agent: curl/8.22.0`
     (`-A` replaces it) and `Accept: */*`, and `Connection: close` — the one
@@ -310,12 +319,18 @@ documents them.
     written as bytes. A URL with a space or a control character is exit 3
     before anything is sent; non-ASCII characters in it are sent as their
     percent-encoded UTF-8 (a host name as IDNA).
-  - `-b <file>` sends only the rows that apply to the URL — domain (the leading
+  - `-b` is a cookie file when it holds no `=` (`-` is stdin; a file that is
+    not there holds nothing), else the cookie string; `-c -` writes the jar to
+    stdout after the body, and a jar that cannot be written does not fail the
+    transfer. `-b <file>` sends only the rows that apply to the URL — domain (the leading
     dot or the `TRUE` flag covers subdomains), path, `Secure` only over https,
     not expired, `#HttpOnly_` rows included — so a jar with several hosts never
     leaks one host's cookies to another. `-c` writes the origin's cookies with
     their expiry and `HttpOnly`, on top of what `-b` read.
-  - `-I` prints the headers by itself; `-i` adds them to a body.
+  - `-I` prints the headers by itself (`-I -X POST` sends POST); `-i` adds them
+    to a body. Two URLs, an unknown option or a missing option value is exit 2
+    in curl's two lines (the message and the `--help` hint), not argparse's
+    usage text.
   - **An output that cannot be written** is exit 23 in curl's words, which
     depend on where the write failed, and `%{errormsg}` follows them. A stdout
     whose reader went away (`curl … | head -c 16`): `Failure writing output to

@@ -4,6 +4,8 @@ and ``-c`` (the response's cookies written back as a jar) -- on
 toolkit uses."""
 
 import os
+import shutil
+import sys
 import urllib.parse
 from pathlib import Path
 from typing import Optional
@@ -29,13 +31,32 @@ class CookieArgs(Group):
     ("-j", "--junk-session-cookies")
 
     def _jar(self):
-        """The -b file's cookies, its session cookies dropped under -j."""
-        return [c for c in load_netscape(Path(self.cookie)) if c.expires or not self.junk_session_cookies]
+        """The -b file's cookies, its session cookies dropped under -j; a
+        file that is not there holds none."""
+        path = Path(self.cookie)
+        if self.cookie == '-':
+            import tempfile
+
+            scratch = tempfile.mkdtemp(prefix='curlike-jar-')
+            try:
+                path = Path(scratch) / 'stdin'
+                path.write_bytes(sys.stdin.buffer.read())
+                return self._rows_of(path)
+            finally:
+                shutil.rmtree(scratch, ignore_errors=True)
+        return self._rows_of(path)
+
+    def _rows_of(self, path):
+        try:
+            return [c for c in load_netscape(path) if c.expires or not self.junk_session_cookies]
+        except OSError:
+            return []
 
     def cookie_from_jar(self):
         """Is ``-b`` a cookie FILE (the cookie engine: cookies chosen per
-        URL), not a literal string?"""
-        return bool(self.cookie) and os.path.exists(self.cookie)
+        URL), not a literal string? curl's rule: no ``=`` in it. ``-`` is
+        stdin."""
+        return self.cookie is not None and '=' not in self.cookie
 
     def cookie_engine(self):
         """Whether cookies are kept and chosen per URL: ``-b FILE`` or ``-c``
@@ -86,5 +107,20 @@ class CookieArgs(Group):
 
     def save_cookie_jar(self):
         """``-c``: the engine's cookies in Netscape format."""
-        if self.cookie_jar:
-            save_netscape(self._rows().values(), Path(self.cookie_jar))
+        if self.cookie_jar and self.cookie_jar != '-':
+            try:
+                save_netscape(self._rows().values(), Path(self.cookie_jar))
+            except OSError:
+                pass  # curl runs on when the jar cannot be written
+
+    def write_cookie_jar_to_stdout(self):
+        """``-c -``: the jar goes to stdout, after the body."""
+        if self.cookie_jar == '-' and self.cookie_engine():
+            import tempfile
+
+            with tempfile.TemporaryDirectory() as scratch:
+                path = Path(scratch) / 'jar'
+                save_netscape(self._rows().values(), path)
+                out = self.stdout()
+                out.write(path.read_bytes())
+                out.flush()

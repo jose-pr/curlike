@@ -58,6 +58,40 @@ def describe_curl(path):
     return describe(path)
 
 
+def _parse(duho, spec, argv):
+    """``duho.parse`` with argparse's usage dump turned into curl's lines: a
+    usage error is an ``EarlyExit`` (exit 2); ``--help`` is shown as it is."""
+    import contextlib
+    import io
+    import re
+
+    from .args import HELP_HINT
+    from .errors import EXIT_USAGE, EarlyExit
+
+    shown = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(shown):
+            return duho.parse(spec, argv)
+    except SystemExit as exc:
+        text = shown.getvalue()
+        if exc.code in (0, None) or 'error:' not in text:
+            sys.stderr.write(text)
+            raise
+        message = text.rsplit('error: ', 1)[1].strip()
+        extra = re.match(r'unrecognized arguments: (.*)', message)
+        required = re.match(r'argument (-[^/ ]+)(?:/\S+)?: expected one argument', message)
+        if extra:
+            words = extra.group(1).split()
+            flags = [w for w in words if w.startswith('-')]
+            if flags:
+                message = 'option %s: is unknown' % flags[0]
+            else:
+                message = '(2) more than one URL (%s): the fallback makes one transfer' % ', '.join(words)
+        elif required:
+            message = 'option %s: requires parameter' % required.group(1)
+        raise EarlyExit(EXIT_USAGE, '%s\n%s' % (message, HELP_HINT))
+
+
 def run_fallback(argv, *, ssl_context=None, proxy_ssl_context=None):
     """Parse ``argv`` and run it. ``ssl_context`` / ``proxy_ssl_context`` --
     a caller's ``ssl.SSLContext`` for every https origin / an https://
@@ -71,7 +105,7 @@ def run_fallback(argv, *, ssl_context=None, proxy_ssl_context=None):
     from .argv import attach_values
     from .options import CurlCmd
 
-    command = duho.parse(CurlCmd, attach_values(argv))
+    command = _parse(duho, CurlCmd, attach_values(argv))
     command.use_contexts(ssl_context, proxy_ssl_context)
     rc = command()
     return 0 if rc is None else rc

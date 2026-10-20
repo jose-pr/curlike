@@ -333,9 +333,8 @@ class OutputArgs(Group):
         directories. A URL with no file name for -O is curl's exit 23."""
         target = self.output
         if target is None and (self.remote_name or self.remote_name_all):
-            target = urllib.parse.urlsplit(url).path.rsplit('/', 1)[-1]
-            if not target:
-                raise LocalError(EXIT_WRITE, 'Remote file name has no length')
+            segments = [s for s in urllib.parse.urlsplit(url).path.split('/') if s]
+            target = urllib.parse.unquote(segments[-1]) if segments else 'curl_response'  # curl's name for none
         if target is None or target == '-':
             self.body_target = None
             return None

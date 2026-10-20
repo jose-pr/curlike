@@ -6,7 +6,7 @@ import urllib.parse
 from typing import List, Optional
 
 from ._duho import Meta, Arg
-from .args import Group, read_source, url_encoded
+from .args import Group, read_failure, read_source, url_encoded
 from .errors import EXIT_PROTOCOL, EXIT_READ, EXIT_URL, EXIT_USAGE, EarlyExit, LocalError
 
 #: The curl release the command answers as (``%{curl_version}``, the User-Agent).
@@ -215,7 +215,7 @@ def _header_lines(values):
         try:
             text = read_source(value[1:]).decode('utf-8', errors='replace')
         except OSError:
-            raise EarlyExit(EXIT_READ, 'Failed to open %s' % value[1:])
+            raise read_failure(value[1:], '-H')
         for line in text.splitlines():
             if line.strip():
                 yield line
@@ -368,10 +368,10 @@ class RequestArgs(Group):
     def request_method(self, has_body, uploading):
         """-I is HEAD; else -X; else GET with -G, PUT with -T, POST with a
         body, GET."""
+        if self.request:  # -I -X POST sends POST and reads the headers only
+            return self.request
         if self.head:
             return 'HEAD'
-        if self.request:
-            return self.request
         if self.get:
             return 'GET'
         if uploading:

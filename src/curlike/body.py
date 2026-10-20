@@ -29,7 +29,6 @@ _FORM_TYPES = {
     '.html': 'text/html',
     '.pdf': 'application/pdf',
     '.xml': 'application/xml',
-    '.json': 'application/json',
 }
 
 
@@ -55,6 +54,10 @@ class FileBody(object):
                 yield piece
 
 
+#: The option name curl names when it cannot read a data file, by field.
+_OPTIONS = {'data': '-d', 'data_binary': '--data-binary', 'data_urlencode': '--data-urlencode', 'json_data': '--json'}
+
+
 class _InOrder(argparse.Action):
     """``append``, plus a ``(dest, value)`` record in the group's ordered
     list: curl joins the pieces in command-line order, across options."""
@@ -74,6 +77,40 @@ def _form_quote(text):
     """A multipart name or filename as curl writes it: ``"``, CR and LF
     percent-encoded."""
     return text.replace('"', '%22').replace('\r', '%0D').replace('\n', '%0A')
+
+
+def _split_form_value(value):
+    """A ``-F`` value as ``(content, {'type': ..., 'filename': ...})``: after
+    ``@`` / ``<`` a ``"..."`` (a backslash escapes ``"`` and itself) is a file
+    name that may hold ``;``; the ``;type=`` / ``;filename=`` pieces follow,
+    and a type keeps the ``;k=v`` pieces that are not keywords
+    (``type=text/plain;charset=utf-8``)."""
+    prefix = value[:1] if value[:1] in ('@', '<') else ''
+    rest = value[len(prefix) :]
+    if prefix and rest.startswith('"'):
+        chars, i = [], 1
+        while i < len(rest) and rest[i] != '"':
+            if rest[i] == '\\' and rest[i + 1 : i + 2] in ('"', '\\'):
+                i += 1
+            chars.append(rest[i])
+            i += 1
+        content, tail = ''.join(chars), rest[i + 1 :]
+    else:
+        cut = _FORM_PARAM.search(rest)
+        content, tail = (rest[: cut.start()], rest[cut.start() :]) if cut else (rest, '')
+    params, last = {}, None
+    for piece in tail.split(';')[1:]:
+        key, sep, raw = piece.partition('=')
+        key = key.strip().lower()
+        if sep and key in ('type', 'filename', 'headers', 'encoder'):
+            quoted = len(raw) > 1 and raw[0] == raw[-1] == '"'
+            params[key] = raw[1:-1] if quoted else raw.strip()
+            last = key
+        elif last == 'type':
+            params['type'] += ';' + piece.strip()  # a parameter of the type
+        elif sep:
+            params[key] = raw.strip()
+    return prefix + content, params
 
 
 def _form_file(path):
@@ -144,20 +181,21 @@ class BodyArgs(Group):
         never reads a file."""
         pieces = []
         for dest, value in self.body_parts or []:
+            option = _OPTIONS.get(dest, '-d')
             if dest == 'data_urlencode':
-                part = url_encoded(value, self.read_data).encode('ascii')
+                part = url_encoded(value, lambda path: self.read_data(path, option)).encode('ascii')
             elif dest == 'data_raw' or not value.startswith('@'):
                 part = value.encode('utf-8')
             else:
-                part = self.read_data(value[1:])
+                part = self.read_data(value[1:], option)
                 if dest == 'data':
-                    part = part.replace(b'\r', b'').replace(b'\n', b'')
+                    part = part.replace(b'\r', b'').replace(b'\n', b'').replace(b'\0', b'')
             pieces.append((dest == 'json_data', part))
         if not pieces:
             return None
         body = pieces[0][1]
         for (was_json, _), (is_json, part) in zip(pieces, pieces[1:]):
-            body += (b'' if was_json and is_json else b'&') + part
+            body += (b'' if is_json else b'&') + part
         return body
 
     def build_form(self):
@@ -187,13 +225,7 @@ class BodyArgs(Group):
             self.usage_error('Illegally formatted input field: %s' % spec)
         if literal:
             return name, value.encode('utf-8'), None, None
-        params = {}
-        cut = _FORM_PARAM.search(value)
-        if cut:
-            value, tail = value[: cut.start()], value[cut.start() :]
-            for key, raw in re.findall(r';\s*([A-Za-z]+)=("[^"]*"|[^;]*)', tail):
-                quoted = len(raw) > 1 and raw[0] == raw[-1] == '"'
-                params[key.lower()] = raw[1:-1] if quoted else raw.strip()
+        value, params = _split_form_value(value)
         unknown = sorted(set(params) - {'type', 'filename'})
         if unknown:
             raise NotImplementedError('Unsupported -F parameter: ;%s=' % unknown[0])
@@ -224,7 +256,7 @@ class BodyArgs(Group):
         except OSError as exc:
             raise LocalError(EXIT_READ, 'Failed to open/read local data from file/application: %s' % exc)
         parts = urllib.parse.urlsplit(url)
-        if not stdin and (not parts.path or parts.path.endswith('/')):
+        if not stdin and not parts.query and (not parts.path or parts.path.endswith('/')):
             path = (parts.path or '/') + urllib.parse.quote(os.path.basename(source))
             url = urllib.parse.urlunsplit(parts._replace(path=path))
         return url, content

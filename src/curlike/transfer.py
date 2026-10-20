@@ -369,7 +369,7 @@ def transport_error(args, reason, transfer, may_retry):
         code, message = EXIT_RECV, 'Proxy CONNECT aborted'
     elif isinstance(reason, (ConnectionRefusedError, socket.timeout)) or not isinstance(reason, ConnectionError):
         host, port = _host_port(transfer.plan.proxy if via_proxy else _hop_url(transfer))
-        code, message = EXIT_CONNECT, 'Failed to connect to %s port %d after %d ms: %s' % (
+        code, message = EXIT_CONNECT, 'Failed to connect to %s:%d after %d ms: %s' % (
             host,
             port,
             _elapsed_ms(transfer),
@@ -749,6 +749,8 @@ def run(args):
         elif body is not None and 'content-type' not in removed and not has_header(headers, 'content-type'):
             headers['Content-Type'] = FORM_CONTENT_TYPE
         data = upload if upload is not None else body
+        if upload is not None and not has_header(headers, 'content-type'):
+            removed.add('content-type')  # -T sends no Content-Type of its own
         method = args.request_method(data is not None, upload is not None)
         if method == 'HEAD':
             data = None
@@ -811,6 +813,7 @@ def run(args):
 
     rc, transfer = _attempts(args, typed, url, method, plan, context, removed, data, headers)
     args.cleanup_after(rc)
+    args.write_cookie_jar_to_stdout()
     args.report(tokens, transfer, rc)
     return rc
 

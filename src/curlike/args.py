@@ -15,7 +15,7 @@ import sys
 import urllib.parse
 
 from ._duho import duho
-from .errors import EXIT_READ, EarlyExit
+from .errors import EXIT_READ, EXIT_USAGE, EarlyExit
 
 
 class Group(duho.Args):
@@ -32,16 +32,29 @@ class Group(duho.Args):
                 check(self)
 
     def usage_error(self, message):
-        """argparse's usage error (exit 2), from this command's parser."""
-        duho.parser(type(self)).error(message)
+        """A usage error as curl prints it: the message and its help hint, exit 2."""
+        raise EarlyExit(EXIT_USAGE, '%s\n%s' % (message, HELP_HINT))
 
-    def read_data(self, path):
+    def read_data(self, path, option='-d'):
         """An ``@``-source's bytes for a data option; a missing file is curl's
         exit 26, before anything is sent."""
         try:
             return read_source(path)
         except OSError:
-            raise EarlyExit(EXIT_READ, 'Failed to open %s' % path)
+            raise read_failure(path, option)
+
+
+#: The line curl ends a usage error with.
+HELP_HINT = "curl: try 'curl --help' or 'curl --manual' for more information"
+
+
+def read_failure(path, option):
+    """curl's exit 26 for a file ``option`` was to read: three lines."""
+    return EarlyExit(
+        EXIT_READ,
+        "Failed to open %s\ncurl: option %s: error encountered when reading a file\n"
+        "curl: try 'curl --help' or 'curl --manual' for more information" % (path, option),
+    )
 
 
 def first_header(header_items, name):
@@ -68,9 +81,9 @@ def url_encoded(spec, reader, raw_plus=False):
         return spec[1:]
     cuts = [i for i in (spec.find('='), spec.find('@')) if i >= 0]
     if not cuts:
-        return urllib.parse.quote(spec, safe='')
+        return urllib.parse.quote_plus(spec, safe='')
     cut = min(cuts)
     name, rest = spec[:cut], spec[cut + 1 :]
     content = reader(rest) if spec[cut] == '@' else rest.encode('utf-8')
-    encoded = urllib.parse.quote(content, safe='')
+    encoded = urllib.parse.quote_plus(content, safe='')
     return '%s=%s' % (name, encoded) if name else encoded

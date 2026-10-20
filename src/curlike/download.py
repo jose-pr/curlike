@@ -21,7 +21,7 @@ from typing import Optional
 
 from ._duho import Meta, Arg
 from .args import Group, first_header
-from .errors import EXIT_USAGE, EXIT_WRITE, EarlyExit, LocalError
+from .errors import EXIT_READ, EXIT_USAGE, EXIT_WRITE, EarlyExit, LocalError
 
 EXIT_RANGE = 33
 EXIT_FILESIZE = 63
@@ -29,7 +29,8 @@ EXIT_FILESIZE = 63
 NO_CLOBBER_TRIES = 100
 
 _SIZE = re.compile(r'^\s*(\d+)\s*([kKmMgG]?)\s*$')
-_DISPOSITION_NAME = re.compile(r'''filename\s*=\s*("([^"]*)"|[^;\s]+)''', re.IGNORECASE)
+_DISPOSITION_NAME = re.compile(r'''(?:^|;)\s*filename\s*=\s*("([^"]*)"|[^;\s]+)''', re.IGNORECASE)
+_RESERVED = re.compile(r'^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(\..*)?$', re.IGNORECASE)
 
 
 def parse_size(value):
@@ -58,6 +59,13 @@ def parse_time(value):
     return None
 
 
+def windows_name(name):
+    """``name`` as curl makes it a Windows file name: ``<>:"|?*`` and control
+    characters become ``_`` and a reserved device name gets a ``_`` in front."""
+    name = re.sub(r'[<>:"|?*\x00-\x1f]', '_', name)
+    return '_' + name if _RESERVED.match(name) else name
+
+
 def disposition_name(header_items):
     """The ``Content-Disposition`` filename with any directory part removed,
     or ``None``."""
@@ -66,7 +74,9 @@ def disposition_name(header_items):
         return None
     name = match.group(2) if match.group(2) is not None else match.group(1)
     name = re.split(r'[\\/]', name.strip())[-1]
-    return name or None
+    if os.name == 'nt':
+        name = windows_name(name)
+    return name if name and name not in ('.', '..') else None
 
 
 class DownloadArgs(Group):
@@ -174,6 +184,16 @@ class DownloadArgs(Group):
                 self._time_value = (unmodified, when)
                 name = 'If-Unmodified-Since' if unmodified else 'If-Modified-Since'
                 headers[name] = email.utils.formatdate(when, usegmt=True)
+        if self.etag_save:
+            try:
+                open(self.etag_save, 'a', encoding='utf-8').close()  # curl opens it before the transfer
+            except OSError:
+                if not self.silent:
+                    from .output import notice_lines
+
+                    text = 'Failed creating file for saving etags: "%s". Skip this transfer' % self.etag_save
+                    print('\n'.join(notice_lines(text, prefix='Warning: ')), file=sys.stderr)
+                raise EarlyExit(EXIT_READ, 'no transfer performed')
         if self.etag_compare is not None:
             try:
                 with open(self.etag_compare, encoding='utf-8') as handle:

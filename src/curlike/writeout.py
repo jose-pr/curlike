@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 from ._duho import Meta, Arg
-from .args import Group, first_header
+from .args import Group, first_header, read_failure
 from .errors import EXIT_READ, EarlyExit
 from .request import CURL_VERSION
 from .routing import caller_url
@@ -97,7 +97,7 @@ def parse_write_out(fmt):
             data = sys.stdin.buffer.read() if source == '-' else Path(source).read_bytes()
             fmt = data.decode('utf-8', 'surrogateescape')  # any byte comes out as it went in
         except OSError as exc:
-            raise EarlyExit(EXIT_READ, 'Failed to open %s' % source)
+            raise read_failure(source, '-w')
     tokens, text, i = [], [], 0
 
     def take(kind, value):
@@ -297,6 +297,8 @@ def _json(values, times, numbers, texts, transfer, exitcode):
             out[name] = numbers[name]
         elif name in _JSON_INTEGERS:
             out[name] = int(values[name])
+        elif name in ('remote_ip', 'local_ip'):
+            out[name] = texts[name]  # '' when nothing connected
         elif name in texts:
             out[name] = texts[name] if texts[name] not in ('', None) else None
         else:
