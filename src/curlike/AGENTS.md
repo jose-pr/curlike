@@ -239,7 +239,8 @@ documents them.
     parse; 2 a `--cacert` / `--netrc-file` naming no file, 26 a `-d @` / `-H @`
     / `-w @` / `-T` file that cannot be read (these print `curl: message`
     with no `(N)` and no `-w`, as curl does). Connecting: 5 the proxy's name
-    or URL is unusable, 6 the host's name, 7 could not connect, 28 timed out,
+    or URL is unusable (the message hides the URL's whole userinfo as
+    `http://***@host`), 6 the host's name, 7 could not connect, 28 timed out,
     35 a failed TLS handshake, 60 a certificate that does not verify, 58 a
     client certificate and 77 a CA bundle/path that cannot be loaded (at the
     handshake, so an `http://` transfer never fails on them), 59 an unusable

@@ -128,11 +128,24 @@ def first_entry(proxymap, url):
     return entries[0]
 
 
+_SCHEME = re.compile(r'[A-Za-z][A-Za-z0-9+.-]*://')
+
+
+def _hide_userinfo(url):
+    """``url`` with everything before its last ``@`` replaced by ``***``: a
+    password may hold ``/``, ``?``, ``#`` or ``@``, so no URL parser says
+    where it ends, and a path's ``@`` only hides more."""
+    scheme = _SCHEME.match(url)
+    head = scheme.group(0) if scheme else ''
+    _userinfo, at, rest = url[len(head) :].rpartition('@')
+    return '%s***@%s' % (head, rest) if at else url
+
+
 def check_proxy_syntax(url):
     """curl's exit 5 for a proxy URL it cannot parse -- ``-x`` or the configured
     proxy alike, whether or not the request would use it: a broken IPv6
     literal, a port out of range, no host, or a host with spaces or control
-    characters in it. The message names the URL with any password hidden."""
+    characters in it. The message names the URL with its userinfo hidden."""
     if not url:
         return
     reason = None
@@ -150,7 +163,7 @@ def check_proxy_syntax(url):
             if not parts.hostname or any(c.isspace() or ord(c) < 32 for c in authority):
                 reason = 'Malformed input to a URL function'
     if reason is not None:
-        shown = re.sub(r'(//[^:@/]*):[^@/]*@', r'\1:***@', url if '://' in url else 'http://' + url)
+        shown = _hide_userinfo(url if _SCHEME.match(url) else 'http://' + url)
         raise LocalError(EXIT_RESOLVE_PROXY, "Unsupported proxy syntax in '%s': %s" % (shown, reason))
 
 

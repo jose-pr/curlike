@@ -322,3 +322,36 @@ def test_fallback_prefix_redirect_is_wrapped_again(target, gateway, monkeypatch,
     assert [path for path, _ in _Gateway.seen] == ["/fetch/" + target + "/redirect", "/fetch/" + target + "/final"]
     assert all(auth == BEARER for _, auth in _Gateway.seen)
     assert _Target.seen == []
+
+
+@pytest.mark.parametrize("password", ["s3cr/et", "p@ss", "p@ss@w0rd", "pa?ss#word", "a://b", "pass"])
+@pytest.mark.parametrize("tail", ["proxy.example:99999", "[bad", "proxy.example:3128 x"])
+def test_the_proxy_syntax_message_hides_the_whole_userinfo(password, tail):
+    from curlike import routing
+    from curlike.errors import LocalError
+
+    for given in ("http://agent:%s@%s", "agent:%s@%s"):
+        with pytest.raises(LocalError) as caught:
+            routing.check_proxy_syntax(given % (password, tail))
+        message = str(caught.value)
+        assert message.startswith("Unsupported proxy syntax in 'http://***@%s': " % tail), message
+        assert "agent" not in message and password not in message, message
+
+
+def test_the_proxy_syntax_message_keeps_a_url_without_userinfo(monkeypatch, capsysbinary):
+    rc, out = _fallback(
+        monkeypatch, capsysbinary, ["-sS", "-x", "http://proxy.example:99999", "http://example.invalid/"]
+    )
+    assert rc == 5 and b"in 'http://proxy.example:99999': " in out.err, out.err
+
+
+def test_the_proxy_syntax_error_never_shows_the_password(monkeypatch, capsysbinary):
+    rc, out = _fallback(
+        monkeypatch, capsysbinary, ["-sS", "-x", "http://agent:s3cr/et@proxy.example:3128", "http://example.invalid/"]
+    )
+    assert rc == 5 and b"in 'http://***@proxy.example:3128': " in out.err, out.err
+    assert b"agent" not in out.err and b"s3cr" not in out.err
+    monkeypatch.setenv("SYSHTTP_PROXY", "http://agent:p@ss@[bad")
+    rc, out = _fallback(monkeypatch, capsysbinary, ["-sS", "http://example.invalid/"])
+    assert rc == 5 and b"in 'http://***@[bad': " in out.err, out.err
+    assert b"agent" not in out.err and b"ss@" not in out.err
