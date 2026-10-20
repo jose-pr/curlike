@@ -3,13 +3,31 @@ and what an HTTP error status does (``-f`` / ``--fail-with-body``)."""
 
 import contextlib
 import os
+import re
 import sys
 import urllib.parse
 from typing import Optional
 
 from ._duho import Meta, Arg
 from .args import Group
+from .download import windows_name
 from .errors import EXIT_WRITE, WRITE_ERROR_TEXT, LocalError, WriteFailure
+from .request import remove_dot_segments
+
+#: A path segment that is only dots, as ``.``, ``..`` or percent-encoded (RFC 3986 section 6.2.2.2).
+_DOT_SEGMENT = re.compile(r'(?i)(\.|%2e){1,2}')
+
+
+def remote_name(url):
+    """The file name ``-O`` gives ``url``, as curl does: the last non-empty
+    segment of its path (a backslash separates, ``.`` and ``..`` are resolved,
+    ``%2e`` too) exactly as written -- ``%2F`` stays three characters -- else
+    ``curl_response``. On Windows it is made a file name (``:`` becomes ``_``)."""
+    path = urllib.parse.urlsplit(url).path.replace('\\', '/')
+    segments = [re.sub(r'(?i)%2e', '.', s) if _DOT_SEGMENT.fullmatch(s) else s for s in path.split('/')]
+    names = [s for s in remove_dot_segments('/'.join(segments)).split('/') if s]
+    name = names[-1] if names else 'curl_response'
+    return windows_name(name) if os.name == 'nt' else name
 
 
 def output_path(name):
@@ -333,8 +351,7 @@ class OutputArgs(Group):
         directories. A URL with no file name for -O is curl's exit 23."""
         target = self.output
         if target is None and (self.remote_name or self.remote_name_all):
-            segments = [s for s in urllib.parse.urlsplit(url).path.split('/') if s]
-            target = urllib.parse.unquote(segments[-1]) if segments else 'curl_response'  # curl's name for none
+            target = remote_name(url)
         if target is None or target == '-':
             self.body_target = None
             return None

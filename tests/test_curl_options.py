@@ -308,6 +308,58 @@ def test_remote_name_output_dir_and_create_dirs(echo, tmp_path, monkeypatch, cap
     assert rc == 0 and (tmp_path / "last").is_file(), "the last non-empty segment"
 
 
+def _files(root):
+    return sorted(p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file())
+
+
+@pytest.mark.parametrize("flags", [[], ["--path-as-is"]], ids=["", "path-as-is"])
+@pytest.mark.parametrize(
+    "segment", ["..%2F..%2Fescaped.txt", "..%5C..%5Cescaped.txt", "C%3A%5CUsers%5Cescaped.txt", "%2e%2e%2Fescaped.txt"]
+)
+def test_remote_name_is_the_last_segment_as_written(segment, flags, echo, tmp_path, monkeypatch, capsysbinary):
+    work = tmp_path / "a" / "b"
+    work.mkdir(parents=True)
+    monkeypatch.chdir(work)
+    rc, _ = _fallback(monkeypatch, capsysbinary, ["-s", "-O", *flags, echo + "/dir/" + segment])
+    assert rc == 0 and _files(tmp_path) == ["a/b/" + segment], "an encoded separator is not one"
+    out = tmp_path / "out"
+    out.mkdir()
+    rc, _ = _fallback(monkeypatch, capsysbinary, ["-s", "-O", "--output-dir", str(out), echo + "/dir/" + segment])
+    assert rc == 0 and _files(out) == [segment], "nothing leaves --output-dir"
+
+
+@pytest.mark.parametrize(
+    "path, name",
+    [
+        ("/a/b/..", "a"),
+        ("/a/..", "curl_response"),
+        ("/dir/%2e%2e", "curl_response"),
+        ("/a/b/%2E%2e", "a"),
+        ("/a/./b/.", "b"),
+        ("/a/b/c%20d", "c%20d"),
+        ("/dir/a\\b.txt", "b.txt"),
+        ("/dir/a\\", "a"),
+    ],
+)
+def test_remote_name_resolves_dot_segments_and_backslashes_as_curl(
+    path, name, echo, tmp_path, monkeypatch, capsysbinary
+):
+    monkeypatch.chdir(tmp_path)
+    for flags in ([], ["--path-as-is"]):
+        rc, _ = _fallback(monkeypatch, capsysbinary, ["-s", "-O", *flags, echo + path])
+        assert rc == 0 and _files(tmp_path) == [name], flags
+        (tmp_path / name).unlink()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="curl makes a Windows file name only there")
+def test_remote_name_is_a_windows_file_name(echo, tmp_path, monkeypatch, capsysbinary):
+    monkeypatch.chdir(tmp_path)
+    for path, name in (("/dir/a:b.txt", "a_b.txt"), ("/dir/CON", "_CON")):
+        rc, _ = _fallback(monkeypatch, capsysbinary, ["-s", "-O", echo + path])
+        assert rc == 0 and _files(tmp_path) == [name]
+        (tmp_path / name).unlink()
+
+
 def test_fail_with_body_keeps_the_body(echo, monkeypatch, capsysbinary):
     rc, out = _fallback(monkeypatch, capsysbinary, ["-sS", "--fail-with-body", echo + "/404"])
     assert rc == 22 and out.out == b"missing" and b"curl: (22)" in out.err
