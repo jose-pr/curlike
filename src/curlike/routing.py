@@ -150,7 +150,7 @@ def check_proxy_syntax(url):
             if not parts.hostname or any(c.isspace() or ord(c) < 32 for c in authority):
                 reason = 'Malformed input to a URL function'
     if reason is not None:
-        shown = re.sub(r'(//[^:@/]*):[^@/]*@', r'\1:***@', url)
+        shown = re.sub(r'(//[^:@/]*):[^@/]*@', r'\1:***@', url if '://' in url else 'http://' + url)
         raise LocalError(EXIT_RESOLVE_PROXY, "Unsupported proxy syntax in '%s': %s" % (shown, reason))
 
 

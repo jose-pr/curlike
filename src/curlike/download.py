@@ -134,7 +134,7 @@ class DownloadArgs(Group):
             raise EarlyExit(
                 EXIT_USAGE,
                 '--continue-at is mutually exclusive with --remove-on-error\n'
-                "curl: option -C: is badly used here\n"
+                "curl: option --remove-on-error: is badly used here\n"
                 "curl: try 'curl --help' or 'curl --manual' for more information",
             )
 

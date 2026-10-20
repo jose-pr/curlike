@@ -48,12 +48,31 @@ class Group(duho.Args):
 HELP_HINT = "curl: try 'curl --help' or 'curl --manual' for more information"
 
 
+def wrapped(text):
+    """``text`` as curl prints a message of its own: wrapped to the terminal's
+    width, every line under ``curl: ``, the first line's prefix left to the
+    caller (an :class:`EarlyExit` is printed after one)."""
+    from .output import notice_lines
+
+    return '\n'.join(notice_lines(text)).split(': ', 1)[1]
+
+
 def read_failure(path, option):
-    """curl's exit 26 for a file ``option`` was to read: three lines."""
+    """curl's exit 26 for a file ``option`` was to read: the message, which
+    names the option, and the help hint."""
     return EarlyExit(
         EXIT_READ,
-        "Failed to open %s\ncurl: option %s: error encountered when reading a file\n"
-        "curl: try 'curl --help' or 'curl --manual' for more information" % (path, option),
+        wrapped('Failed to open %s' % path)
+        + "\ncurl: option %s: error encountered when reading a file\n%s" % (option, HELP_HINT),
+    )
+
+
+def missing_file(path, option):
+    """curl's exit 2 for a file ``option`` names that is not there."""
+    return EarlyExit(
+        EXIT_USAGE,
+        wrapped("The file '%s' provided to %s does not exist" % (path, option))
+        + "\ncurl: option %s: is badly used here\n%s" % (option, HELP_HINT),
     )
 
 

@@ -12,7 +12,7 @@ from typing import Optional
 from syshttp.tls import new_os_context
 
 from ._duho import Meta, Arg
-from .args import Group
+from .args import Group, missing_file
 from .errors import EXIT_CACERT, EXIT_CRL, EXIT_CLIENT_CERT, EXIT_USAGE, EarlyExit, LocalError
 
 EXIT_CIPHER = 59
@@ -411,7 +411,7 @@ class TLSArgs(Group):
             return
         for flag, path in named:
             if path and not os.path.exists(path):
-                raise EarlyExit(EXIT_USAGE, "The file '%s' provided to %s does not exist" % (path, flag))
+                raise missing_file(path, flag)
 
     def use_contexts(self, ssl_context=None, proxy_ssl_context=None):
         """Use a caller's contexts in place of the flags'. A flag the context

@@ -15,7 +15,7 @@ import urllib.parse
 from typing import Optional
 
 from ._duho import Meta, Arg
-from .args import Group
+from .args import Group, missing_file
 from .errors import EXIT_READ, EXIT_USAGE, EarlyExit, LocalError
 
 _ESCAPES = {'n': '\n', 'r': '\r', 't': '\t'}
@@ -178,7 +178,7 @@ class AuthArgs(Group):
         """The netrc entry for the host (``user``'s, when one is named), or ``None``."""
         if self.netrc_file:
             if not os.path.isfile(self.netrc_file):
-                raise EarlyExit(EXIT_USAGE, "The file '%s' provided to --netrc-file does not exist" % self.netrc_file)
+                raise missing_file(self.netrc_file, '--netrc-file')
             path = self.netrc_file
         elif self.netrc or self.netrc_optional:
             path = default_netrc()

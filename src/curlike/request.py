@@ -81,7 +81,13 @@ def check_glob(url):
     if depth is not None:
         if depth[0] == '{':
             raise EarlyExit(EXIT_URL, '(3) unmatched brace in position %d:' % (len(url) + 1))
-        raise EarlyExit(EXIT_URL, '(3) bad range specification in position %d:' % (depth[1] + 2))
+        # A range opens with a letter or a digit; anything else is no range at all.
+        what = (
+            'bad range in position'
+            if url[depth[1] + 1 : depth[1] + 2].isalnum()
+            else 'bad range specification in position'
+        )
+        raise EarlyExit(EXIT_URL, '(3) %s %d:' % (what, depth[1] + 2))
 
 
 _URL_REFUSED = re.compile('[\x00-\x20\x7f]')
@@ -162,8 +168,8 @@ def parse_protocols(spec, flag, start):
         if name != 'all' and name not in ALL_PROTOCOLS:
             raise EarlyExit(
                 EXIT_USAGE,
-                "unrecognized protocol '%s'\ncurl: option %s: is badly used here\n"
-                "curl: try 'curl --help' or 'curl --manual' for more information" % (name, flag),
+                "option %s: is badly used here\n"
+                "curl: try 'curl --help' or 'curl --manual' for more information" % flag,
             )
         if op == '=':
             allowed = set(names)

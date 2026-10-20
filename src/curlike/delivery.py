@@ -50,7 +50,7 @@ class _Layer(object):
                 self.inflater = zlib.decompressobj(16 + zlib.MAX_WBITS)
             return b''.join(out)
         except zlib.error as exc:
-            raise EncodingError('Error while processing content unencoding: %s' % exc)
+            raise EncodingError('Error while processing content unencoding: %s' % str(exc).rpartition(': ')[2])
 
     def finish(self):
         if self.started and not self.inflater.eof:

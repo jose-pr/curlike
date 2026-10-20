@@ -5,11 +5,12 @@ import argparse
 import binascii
 import os
 import re
+import sys
 import urllib.parse
 from typing import List, Optional
 
 from ._duho import Meta, Arg
-from .args import Group, read_source, url_encoded
+from .args import HELP_HINT, Group, read_source, url_encoded
 from .errors import EXIT_READ, LocalError
 
 FORM_CONTENT_TYPE = 'application/x-www-form-urlencoded'
@@ -253,8 +254,9 @@ class BodyArgs(Group):
                 content = FileBody(source, size) if size else b''
             else:
                 content = read_source('-' if stdin else source)
-        except OSError as exc:
-            raise LocalError(EXIT_READ, 'Failed to open/read local data from file/application: %s' % exc)
+        except OSError:
+            print("curl: cannot open '%s'\n%s" % (source, HELP_HINT), file=sys.stderr)
+            raise LocalError(EXIT_READ, 'Failed to open/read local data from file/application')
         parts = urllib.parse.urlsplit(url)
         if not stdin and not parts.query and (not parts.path or parts.path.endswith('/')):
             path = (parts.path or '/') + urllib.parse.quote(os.path.basename(source))

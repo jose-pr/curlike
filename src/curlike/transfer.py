@@ -369,9 +369,21 @@ def transport_error(args, reason, transfer, may_retry):
         code, message = EXIT_RECV, 'Proxy CONNECT aborted'
     elif isinstance(reason, (ConnectionRefusedError, socket.timeout)) or not isinstance(reason, ConnectionError):
         host, port = _host_port(transfer.plan.proxy if via_proxy else _hop_url(transfer))
-        code, message = EXIT_CONNECT, 'Failed to connect to %s:%d after %d ms: %s' % (
+        over = ''
+        if via_proxy:
+            # curl names the proxy; it shows the target when a tunnel or SOCKS carries it.
+            proxy_host = host
+            if (
+                urllib.parse.urlsplit(_hop_url(transfer)).scheme == 'https'
+                or args.proxytunnel
+                or transfer.plan.proxy.lower().startswith('socks')
+            ):
+                host, port = _host_port(_hop_url(transfer))
+            over = ' over proxy %s' % proxy_host
+        code, message = EXIT_CONNECT, 'Failed to connect to %s:%d%s after %d ms: %s' % (
             host,
             port,
+            over,
             _elapsed_ms(transfer),
             'Could not connect to server' if isinstance(reason, ConnectionRefusedError) else text,
         )
@@ -420,16 +432,20 @@ def reply_error(args, exc, transfer, may_retry):
 
 
 def _bad_chunk(exc):
-    """Whether an ``IncompleteRead`` from a chunked body is a malformed chunk
-    size (curl's 56) rather than the connection closing early (18):
-    http.client reports both from a ``ValueError`` parsing the size line, an
-    empty line being the closed connection."""
+    """The first character that is not a hex digit of a malformed chunk size
+    in the ``IncompleteRead`` of a chunked body (curl's 56), or ``None`` when
+    the connection merely closed early (18): http.client reports both from a
+    ``ValueError`` parsing the size line, an empty line being the closed
+    connection."""
     seen = exc
     while seen is not None:
         if isinstance(seen, ValueError):
-            return not str(seen).endswith("b''")
+            line = re.search(r"b'(.*)'$", str(seen))
+            if line is None or not line.group(1):
+                return None
+            return next((c for c in line.group(1) if c not in '0123456789abcdefABCDEF'), None)
         seen = seen.__cause__ or seen.__context__
-    return False
+    return None
 
 
 def raw_response(response):
@@ -463,8 +479,9 @@ def body_failure(args, exc, transfer, chunked):
     if low and isinstance(exc, (socket.timeout, TimeoutError)):
         return EXIT_TIMEOUT, 'Operation too slow. Less than %d bytes/sec transferred the last %d seconds' % low
     if isinstance(exc, http.client.IncompleteRead):
-        if chunked and _bad_chunk(exc):
-            return EXIT_RECV, 'chunk hex-length char not a hex digit'
+        bad = _bad_chunk(exc) if chunked else None
+        if bad is not None:
+            return EXIT_RECV, 'chunk hex-length char not a hex digit: 0x%x' % ord(bad)
         if chunked:
             return EXIT_PARTIAL, 'transfer closed with outstanding read data remaining'
         return EXIT_PARTIAL, 'end of response with %d bytes missing' % (exc.expected or 0)
