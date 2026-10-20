@@ -620,6 +620,24 @@ def _schannel():
 SCHANNEL = bool(REAL_CURL) and _schannel()
 
 
+#: The usage hint curl ends a usage error with. A curl built without its
+#: manual (``--disable-manual``, as Windows ships it) leaves out "or 'curl
+#: --manual'"; the fallback answers as curl.se's builds, which have it.
+_HINT = "curl: try 'curl --help' or 'curl --manual' for more information"
+_HINT_NO_MANUAL = "curl: try 'curl --help' for more information"
+
+
+def _has_manual():
+    try:
+        err = subprocess.run([REAL_CURL], capture_output=True, timeout=10).stderr
+    except (OSError, subprocess.SubprocessError):
+        return True
+    return _HINT_NO_MANUAL.encode() not in err
+
+
+HAS_MANUAL = not REAL_CURL or _has_manual()
+
+
 def _real_version():
     from curlike.realcurl import describe
 
@@ -1779,6 +1797,8 @@ def test_the_fallback_answers_as_curl_does(world, name, argv, env, tls, allowed)
         err_code = code if err_code is not None else None
     if REAL_VERSION >= MESSAGES_FROM and name not in STDERR_DIFFERS and fallback[0] == real[0]:
         seen, wanted = _messages(fallback[3]), _messages(real[3])
+        if not HAS_MANUAL:
+            seen = [_HINT_NO_MANUAL if line == _HINT else line for line in seen]
         assert seen == wanted, "%s: stderr\n real curl: %r\n fallback:  %r" % (name, wanted, seen)
     assert (fallback[0], fallback[1], fallback[2]) == (
         code,
