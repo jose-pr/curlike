@@ -9,8 +9,8 @@ installed. The servers are raw sockets on 127.0.0.1, so each failure is
 exact: a reply cut short, a reset, a proxy refusing or dropping the CONNECT.
 
 The fallback answers as the latest stable curl. A scenario whose answer
-changed in a release newer than the installed curl is skipped (``SINCE``),
-never imitated.
+changed in a release newer than the installed curl is skipped (``SINCE``, and
+``BROKEN_IN`` for a release that answered wrongly), never imitated.
 """
 
 import base64
@@ -632,11 +632,17 @@ REAL_VERSION = _real_version()
 #: be at least this new for the comparison to mean anything.
 SINCE = {
     "100: a 200 KB header": (8, 6, 0),
+    "--retry on a name that does not resolve": (8, 9, 0),  # -w %{num_retries} is new
+    "--retry-all-errors on a cut body": (8, 9, 0),
+    "--proxy-pinnedpubkey mismatch": (8, 10, 0),  # the option was never passed on before
+    "2: -C with --remove-on-error": (8, 11, 1),  # refused at parse time since
+    "8: conflicting Content-Length": (8, 17, 0),  # the last value won before
     "56: headers over 300 KB": (8, 21, 0),
     "100: over 5000 headers": (8, 21, 0),
     "socks proxy not resolvable": (8, 14, 0),
     "--proto unknown name": (8, 18, 0),
     "--cacert missing": (8, 18, 0),
+    "--proxy-cacert missing": (8, 18, 0),
     "--crlfile missing": (8, 18, 0),
     "--netrc-file missing": (8, 18, 0),
     "socks5, target not resolvable here": (8, 20, 0),
@@ -650,6 +656,12 @@ SINCE = {
     "agent proxy bearer CONNECT 407": (8, 20, 0),
     "--proxy-digest over CONNECT, wrong password": (8, 20, 0),
     "https proxy, CONNECT 407": (8, 20, 0),
+}
+
+#: Scenarios a curl release answered wrongly and a later one fixed, as
+#: ``(first release, release that fixed it)``: no comparison in between.
+BROKEN_IN = {
+    "--max-redirs -1": ((8, 16, 0), (8, 17, 0)),  # -1 (no limit) was taken as 0
 }
 EMPTY_PATH = None
 
@@ -1742,7 +1754,9 @@ def test_the_fallback_answers_as_curl_does(world, name, argv, env, tls, allowed)
     if tls and not world["tls"]:
         pytest.skip("no openssl to make the TLS origin's certificate with")
     if name in SINCE and REAL_VERSION < SINCE[name]:
-        pytest.skip("curl %d.%d.%d answers as releases before %d.%d did" % (REAL_VERSION + SINCE[name][:2]))
+        pytest.skip("curl %d.%d.%d answers as releases before %d.%d.%d did" % (REAL_VERSION + SINCE[name]))
+    if name in BROKEN_IN and BROKEN_IN[name][0] <= REAL_VERSION < BROKEN_IN[name][1]:
+        pytest.skip("curl %d.%d.%d answers wrongly; %d.%d.%d fixed it" % (REAL_VERSION + BROKEN_IN[name][1]))
     if SCHANNEL and name in SCHANNEL_OWN:
         pytest.skip("Schannel's own behaviour: %s" % SCHANNEL_OWN[name])
 
@@ -1825,6 +1839,13 @@ _SAME = (
     "xfer_id",
 )
 _NUMBERS = ("local_port", "speed_download", "speed_upload", "size_request")
+#: ``-w`` variables a release added: an older curl warns and prints nothing for them.
+WRITE_OUT_SINCE = {
+    "proxy_used": (8, 7, 0),
+    "num_retries": (8, 9, 0),
+    "time_posttransfer": (8, 10, 0),
+    "size_delivered": (8, 20, 0),
+}
 
 
 @pytest.mark.parametrize(
@@ -1841,19 +1862,24 @@ _NUMBERS = ("local_port", "speed_download", "speed_upload", "size_request")
 def test_write_out_timings_and_addresses(world, name, argv, tls):
     if tls and not world["tls"]:
         pytest.skip("no openssl to make the TLS origin's certificate with")
-    same = [k for k in _SAME if k != "size_delivered" or REAL_VERSION >= (8, 20, 0)]  # a 8.20 variable
+    unknown = {k for k, since in WRITE_OUT_SINCE.items() if REAL_VERSION < since}
+    same = [k for k in _SAME if k not in unknown]
     names = _TIMES + _SAME + _NUMBERS
     fmt = "|".join("%{" + v + "}" for v in names)
     args = ["-s", "-o", os.devnull, "-w", fmt] + argv(world)
     real = dict(zip(names, _run(args, {}, real=True)[2].decode().split("|")))
     fallback = dict(zip(names, _run(args, {}, real=False)[2].decode().split("|")))
     assert set(real) == set(fallback) == set(names), (real, fallback)
-    for key in _TIMES:
-        if real[key] == "":  # a variable this curl does not know yet: empty on both sides
-            assert fallback[key] == "", (key, fallback[key])
+    for key in unknown:  # the fallback answers as the latest curl: only it has a value
+        assert real[key] == "", (key, real[key])
+    if name == "refused" and REAL_VERSION < (8, 10, 0):  # with no connection the port was 0 before 8.10, now -1
+        assert real["remote_port"] == "0" and fallback["remote_port"] == "-1", (real, fallback)
+        same.remove("remote_port")
     for side in (real, fallback):
         for key in _TIMES:
-            assert real[key] == "" or re.match(r"^\d+\.\d{6}$", side[key]), (key, side[key])
+            if side is real and key in unknown:
+                continue
+            assert re.match(r"^\d+\.\d{6}$", side[key]), (key, side[key])
         for key in _NUMBERS:
             assert re.match(r"^-?\d+$", side[key]), (key, side[key])
         if side["exitcode"] == "0":
@@ -1872,16 +1898,11 @@ def test_write_out_json_has_curls_keys(world):
     real = json.loads(_run(args, {}, real=True)[2])
     fallback = json.loads(_run(args, {}, real=False)[2])
     assert set(real) <= set(fallback), sorted(set(real) - set(fallback))
-    for key in (
-        "http_code",
-        "exitcode",
-        "remote_ip",
-        "remote_port",
-        "num_connects",
-        "size_download",
-        "url.host",
-        "scheme",
-        "method",
-    ):
+    keys = ["http_code", "exitcode", "remote_ip", "remote_port", "num_connects", "size_download", "url.host", "method"]
+    if REAL_VERSION < (8, 8, 0):  # before 8.8 curl wrote the scheme in capitals
+        assert (real["scheme"], fallback["scheme"]) == ("HTTP", "http")
+    else:
+        keys.append("scheme")
+    for key in keys:
         assert fallback[key] == real[key], (key, fallback[key], real[key])
     assert type(fallback["time_total"]) is float and type(fallback["local_port"]) is int
