@@ -878,6 +878,28 @@ SCENARIOS = [
     ("refused", lambda w: [w["dead"] + "/"], {}, False, {}),
     ("no such host", lambda w: ["http://nonexistent.invalid/"], {}, False, {}),
     ("timeout", lambda w: ["-m", "1", w["silent"] + "/"], {}, False, {}),
+    (
+        "--connect-timeout does not cut a slow reply",
+        lambda w: ["--connect-timeout", "1", "-m", "2", w["silent"] + "/"],
+        {},
+        False,
+        {},
+    ),
+    (
+        "--retry on a name that does not resolve",
+        lambda w: ["--retry", "1", "-w", "[%{exitcode} %{num_retries}]", "http://nonexistent.invalid/"],
+        {},
+        False,
+        {},
+    ),
+    (
+        "--retry-all-errors on a cut body",
+        lambda w: ["--retry", "1", "--retry-all-errors", "-w", "[%{exitcode} %{num_retries}]", w["truncated"] + "/"],
+        {},
+        False,
+        {},
+    ),
+    ("--retry on a body cut short, not all errors", lambda w: ["--retry", "1", w["truncated"] + "/"], {}, False, {}),
     # The reply.
     ("empty reply", lambda w: [w["empty"] + "/"], {}, False, {}),
     ("not HTTP", lambda w: [w["not_http"] + "/"], {}, False, {}),
@@ -1685,6 +1707,35 @@ def _env(world, env):
     return out
 
 
+#: What each TLS library says for a failed handshake or verification is its own.
+_TLS_WORDS = re.compile(r"^curl: \((35|51|58|60)\) .*")
+#: So is the operating system's text for a connection that was lost.
+_OS_WORDS = re.compile(
+    r"Recv failure: (Connection was (reset|aborted)|Connection reset by peer|An existing connection.*|\[SSL: .*)"
+)
+
+
+def _messages(stderr):
+    """curl's own lines on ``stderr`` (``curl: ...`` and ``Warning: ...``), the
+    numbers in them (times, ports, byte counts, temp names) made ``N``."""
+    lines = []
+    for line in stderr.decode("utf-8", "replace").replace("\r\n", "\n").split("\n"):
+        if line.startswith(("curl: ", "Warning: ")):
+            line = _TLS_WORDS.sub(r"curl: (\1) <the TLS library's words>", line)
+            line = _OS_WORDS.sub("Recv failure: <the OS's words for a lost connection>", line)
+            lines.append(re.sub(r"[0-9]+", "N", line))
+    return lines
+
+
+#: Scenarios where the words differ and why (the exit codes agree).
+STDERR_DIFFERS = {
+    "--interface no such name": "curl reports a failed bind at connect time, naming the target",
+}
+
+#: The messages were measured on this curl; an older one words some differently.
+MESSAGES_FROM = (8, 21, 0)
+
+
 @pytest.mark.parametrize("name,argv,env,tls,allowed", SCENARIOS, ids=[s[0] for s in SCENARIOS])
 def test_the_fallback_answers_as_curl_does(world, name, argv, env, tls, allowed):
     if tls and not world["tls"]:
@@ -1711,6 +1762,9 @@ def test_the_fallback_answers_as_curl_does(world, name, argv, env, tls, allowed)
         out = out.replace(b"%d]" % code, b"%d]" % allowed[code])
         code = allowed[code]
         err_code = code if err_code is not None else None
+    if REAL_VERSION >= MESSAGES_FROM and name not in STDERR_DIFFERS and fallback[0] == real[0]:
+        seen, wanted = _messages(fallback[3]), _messages(real[3])
+        assert seen == wanted, "%s: stderr\n real curl: %r\n fallback:  %r" % (name, wanted, seen)
     assert (fallback[0], fallback[1], fallback[2]) == (
         code,
         err_code,

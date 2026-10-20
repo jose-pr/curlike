@@ -273,7 +273,7 @@ def test_upload_file_puts_and_names_the_url(echo, tmp_path, monkeypatch, capsysb
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "-T", str(f), "-X", "POST", echo + "/exact"])
     assert _seen(out)["method"] == "POST" and _seen(out)["path"] == "/exact"
     rc, out = _fallback(monkeypatch, capsysbinary, ["-sS", "-T", str(tmp_path / "nope"), echo + "/"])
-    assert rc == 26 and out.err.startswith(b"curl: (26)")
+    assert rc == 26 and b"curl: (26) Failed to open/read local data" in out.err
 
 
 # --------------------------------------------------------------------------- #
@@ -573,7 +573,9 @@ def test_unusable_tls_files_are_curls_codes(pki, tls_origin, echo, monkeypatch, 
         monkeypatch, capsysbinary, ["-sS", "-w", "%{exitcode}", "--cacert", str(pki / "nope.pem"), tls_origin]
     )
     assert rc == 2 and out.out == b""
-    assert out.err.strip() == ("curl: The file '%s' provided to --cacert does not exist" % (pki / "nope.pem")).encode()
+    joined = out.err.replace(b"\ncurl: ", b"")  # curl wraps a long path over several lines
+    assert ("The file '%s' provided to --cacert does not exist" % (pki / "nope.pem")).encode() in joined
+    assert b"curl: option --cacert: is badly used here" in out.err
     # One that is not a CA bundle fails at the handshake: 77, -w written.
     (tmp_path / "garbage.pem").write_text("not a certificate\n")
     rc, out = _fallback(
