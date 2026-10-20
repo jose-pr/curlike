@@ -15,9 +15,9 @@ on:
 permissions:
   contents: read
 
-# The syshttp commit of 0.1.0.dev14, the floor in pyproject.toml; bump it with the floor.
+# The syshttp commit of 0.1.0.dev19, the floor in pyproject.toml; bump it with the floor.
 env:
-  SYSHTTP_REF: 26ad69c5bd3b1612692c3aa8efa390359ad6ce07
+  SYSHTTP_REF: b7c599c5f020a19e99afa131d9b4b2037f24bfe3
 
 jobs:
   test:
