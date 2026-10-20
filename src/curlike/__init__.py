@@ -134,3 +134,5 @@ def main(argv=None, *, ssl_context=None, proxy_ssl_context=None):
         return 2
     except SystemExit as exc:  # argparse: --help (0) or a usage error (2)
         return exc.code if isinstance(exc.code, int) else (0 if exc.code is None else 2)
+    except KeyboardInterrupt:  # curl is silent: the shell's 128 + SIGINT
+        return 130

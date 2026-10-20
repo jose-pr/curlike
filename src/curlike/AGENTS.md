@@ -252,7 +252,8 @@ documents them.
     written, 26 when a `-F` file cannot be read. An unsupported flag, a
     conflicting pair (`-d` with `-F`, `-f` with `--fail-with-body`) or a bad
     proxy configuration is exit 2 (`curl: (2) …`, one line, never a
-    traceback). `-o /dev/null` is the null device on Windows too.
+    traceback). Ctrl-C is 130 with nothing printed, as with curl.
+    `-o /dev/null` is the null device on Windows too.
   - **`--retry N`** retries what curl calls transient — a timeout, a name that
     does not resolve and HTTP 408/429/500/502/503/504
     (`syshttp.retry.TRANSIENT_STATUSES`, the list the requests session

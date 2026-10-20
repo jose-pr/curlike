@@ -257,3 +257,51 @@ def test_c_writes_httponly_and_expiry_on_top_of_b(origin, tmp_path, monkeypatch,
     # ... and the file reads back: the HttpOnly row is sent, the session row too.
     rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "-b", str(jar), origin + "/echo"])
     assert sorted(_echo(out)["headers"]["cookie"].split("; ")) == ["flash=1", "sid=abc"]
+
+
+def test_ctrl_c_is_a_silent_130(monkeypatch, capsysbinary):
+    import _thread
+
+    class Interrupting(BaseHTTPRequestHandler):
+        def do_GET(self):
+            _thread.interrupt_main()  # the main thread is waiting for this reply
+            self.send_response(200)
+            self.send_header("Content-Length", "4")
+            self.end_headers()
+            self.wfile.write(b"late")
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Interrupting)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        rc, out = _fallback(monkeypatch, capsysbinary, ["-s", "http://127.0.0.1:%d/" % server.server_port])
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+    assert rc == 130 and out.err == b"" and out.out == b"", out
+
+
+def test_ctrl_c_in_a_transfer_is_130_without_a_traceback(monkeypatch, capsysbinary):
+    from curlike import transfer
+
+    def interrupted(command):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(transfer, "run", interrupted)
+    rc, out = _fallback(monkeypatch, capsysbinary, ["-sS", "http://127.0.0.1:9/"])
+    assert rc == 130 and out.err == b"" and out.out == b""
+
+
+def test_run_fallback_lets_ctrl_c_through(monkeypatch):
+    from curlike import transfer
+
+    def interrupted(command):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(transfer, "run", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        curl.run_fallback(["-s", "http://127.0.0.1:9/"])
