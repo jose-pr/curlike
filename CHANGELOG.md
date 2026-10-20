@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-20
+
 ### Added
 
 - The `pycurl` console script and `python -m curlike`: the drop-in curl
@@ -130,8 +132,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   the port in use. Windows reports a port whose last connection to the same
   address is in TIME_WAIT there, not at `bind()`, and the fallback used to
   give up with exit 7.
-
-[Unreleased]: https://github.com/jose-pr/curlike/commits/main
 
 - -L follows redirects in curlike's own loop, as curl does: 50 hops by default
   (--max-redirs -1 is unlimited, 0 refuses the first; exit 47 past the limit);
@@ -275,3 +275,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `str.splitlines` ends a line at could end its row early and start a row for
   another domain. A row with a control character in its name or value is
   skipped, as curl skips it.
+
+[Unreleased]: https://github.com/jose-pr/curlike/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/jose-pr/curlike/releases/tag/v0.1.0
