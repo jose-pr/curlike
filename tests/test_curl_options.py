@@ -194,7 +194,7 @@ def test_data_urlencode_forms_in_command_line_order(echo, tmp_path, monkeypatch,
             echo,
         ],
     )
-    assert rc == 0 and _seen(out)["body"] == b"a%20b&raw=1&c%20d&n=e%3Df&file=x%20y%26z"
+    assert rc == 0 and _seen(out)["body"] == b"a+b&raw=1&c+d&n=e%3Df&file=x+y%26z"
 
 
 def test_get_moves_the_data_into_the_query(echo, monkeypatch, capsysbinary):
@@ -202,14 +202,14 @@ def test_get_moves_the_data_into_the_query(echo, monkeypatch, capsysbinary):
         monkeypatch, capsysbinary, ["-s", "-G", "-d", "q=1", "--data-urlencode", "s=a b", echo + "/find"]
     )
     seen = _seen(out)
-    assert rc == 0 and seen["method"] == "GET" and seen["path"] == "/find?q=1&s=a%20b" and seen["body"] == b""
+    assert rc == 0 and seen["method"] == "GET" and seen["path"] == "/find?q=1&s=a+b" and seen["body"] == b""
 
 
 def test_url_query_encodes_or_keeps(echo, monkeypatch, capsysbinary):
     rc, out = _fallback(
         monkeypatch, capsysbinary, ["-s", "--url-query", "a=b c", "--url-query", "+raw=%41", echo + "/q?x=1"]
     )
-    assert rc == 0 and _seen(out)["path"] == "/q?x=1&a=b%20c&raw=%41"
+    assert rc == 0 and _seen(out)["path"] == "/q?x=1&a=b+c&raw=%41"
 
 
 def test_bearer_basic_and_range(echo, monkeypatch, capsysbinary):
@@ -301,8 +301,11 @@ def test_remote_name_output_dir_and_create_dirs(echo, tmp_path, monkeypatch, cap
     )
     assert rc == 0 and (tmp_path / "a" / "b" / "x.json").is_file()
     assert out.out.decode() == os.path.join(str(tmp_path / "a" / "b"), "x.json")
+    monkeypatch.chdir(tmp_path)
     rc, out = _fallback(monkeypatch, capsysbinary, ["-sS", "-O", echo + "/"])
-    assert rc == 23 and b"Remote file name has no length" in out.err
+    assert rc == 0 and (tmp_path / "curl_response").is_file(), "no name in the URL: curl's curl_response"
+    rc, out = _fallback(monkeypatch, capsysbinary, ["-sS", "-O", echo + "/dir/last/"])
+    assert rc == 0 and (tmp_path / "last").is_file(), "the last non-empty segment"
 
 
 def test_fail_with_body_keeps_the_body(echo, monkeypatch, capsysbinary):
