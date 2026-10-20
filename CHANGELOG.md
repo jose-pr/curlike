@@ -189,3 +189,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   POST sends POST; %{json} writes "" for the addresses of a transfer that
   never connected; the connect failure reads host:port.
 
+- Messages follow curl 8.21's words where they had drifted: a bad chunk names
+  the byte (0x7a), a bad gzip stream drops zlib's prefix, a refused proxy
+  connection says "over proxy", a missing --cacert, --crlfile, --netrc-file or
+  --proxy-cacert file is wrapped and followed by the option hint, an
+  unreadable -d, -H or -w file wraps its path, a -T file that is not there
+  prints curl's three lines, an unknown --proto name prints no first line, a
+  proxy with no scheme is shown as http://..., and the glob error words match.
+
