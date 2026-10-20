@@ -1258,7 +1258,7 @@ SCENARIOS = [
         lambda w: ["-x", w["https_proxy_mutual"], "--proxy-cacert", _ca(w), X],
         {},
         True,
-        {55: 56},
+        {55: 56, 56: 55},
     ),  # the same race as "client certificate required"
     ("agent proxy over https", lambda w: ["--proxy-insecure", X], {"SYSHTTP_PROXY": "@https_proxy"}, True, {}),
     # Proxy Digest: nothing up front, the 407 answered once.
@@ -1520,7 +1520,13 @@ SCENARIOS = [
     ("77: --cacert not a bundle", lambda w: ["--cacert", str(w["tmp"] / "garbage.pem"), S(w)], {}, True, {}),
     # The server's "certificate required" alert races curl's first write: 56
     # when curl reads it, 55 when the reset reaches its send first.
-    ("client certificate required", lambda w: w["ca"] + [w["tls_mutual"] + "/"], {}, True, {55: 56}),
+    (
+        "client certificate required",
+        lambda w: w["ca"] + [w["tls_mutual"] + "/"],
+        {},
+        True,
+        {55: 56, 56: 55},
+    ),
     (
         "client certificate given",
         lambda w: w["ca"]
