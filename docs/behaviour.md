@@ -284,4 +284,5 @@
   `$CURL_CA_BUNDLE` name one, which replaces it as in curl; `-k/--insecure`
   disables verification. `--cert file[:password]` (the file may hold the key),
   `--key`, `--pass` present a client certificate, PEM only.
-- `-v` prints the proxy with the password redacted; nothing here logs a credential.
+- `-v` prints the request as given, so an `Authorization` or `Cookie` the caller set appears in it, as
+  in curl -v; only the configured proxy's credential is redacted.

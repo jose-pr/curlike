@@ -17,8 +17,8 @@ from .request import CURL_VERSION
 from .routing import caller_url
 
 #: The ``--write-out`` variables the fallback reports, with curl's meaning and
-#: format. Any other ``%{name}`` (``time_connect``, ``remote_ip``, ``json``...)
-#: or an ``%output{file}`` is refused before the request, like an unsupported flag.
+#: format. Any other ``%{name}`` (``certs``...) or an ``%output{file}`` is refused
+#: before the request, like an unsupported flag.
 WRITE_OUT_VARIABLES = frozenset(
     [
         'content_type',

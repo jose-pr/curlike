@@ -51,6 +51,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   line usage errors (exit 2, with the --help hint) instead of argparse's
   52-line usage dump.
 
+- The duho floor is 0.7.0, the first release with duho.Meta (the suite passes
+  at it); -v is documented as printing the request as given, the caller's
+  Authorization and Cookie included, with only the configured proxy's
+  credential redacted.
+
 ### Removed
 
 - `<P>_CURL_COMPAT` and the per-version answers behind it (`curlike.compat`):

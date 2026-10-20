@@ -161,7 +161,8 @@ def _redirector(conn, head):
     path = head.split(b" ")[1].decode() if b" " in head else "/"
     port = conn.getsockname()[1]
     if path.startswith("/chain/") and int(path[7:]) > 0:
-        return _respond(conn, "302 Found", extra=["Location: /chain/%d" % (int(path[7:]) - 1)])
+        # Connection: close, so the client does not send its next request on a connection closed under it.
+        return _respond(conn, "302 Found", extra=["Location: /chain/%d" % (int(path[7:]) - 1), "Connection: close"])
     for scheme in ("ftp", "file", "gopher"):
         if path == "/to-" + scheme:
             host = "" if scheme == "file" else "127.0.0.1:1"
