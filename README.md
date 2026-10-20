@@ -82,7 +82,7 @@ and are private.
 | Variable | Sets |
 | --- | --- |
 | `<P>_PYTHON` | the interpreter a `.py` hook wrapper runs under |
-| `<P>_PYLIB` | where to find duho when it is not installed |
+| `<P>_PYLIB` | where to find duho when it is not installed: for a host tool that runs curlike from a zipapp (`.pyz`) or a vendored directory |
 
 ## Development
 

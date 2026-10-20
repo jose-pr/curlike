@@ -22,9 +22,11 @@ import sys
 
 def caller_steering(argv):
     """``(proxy, noproxy, proxy_user)`` as ``argv`` names them (``-x`` /
-    ``--proxy``, ``--noproxy``, ``-U`` / ``--proxy-user``), ``None`` each when
-    absent: argv read the way curl reads it, option values never taken for
-    options. Needs duho."""
+    ``--proxy`` / ``--proxy1.0`` / ``--preproxy`` / ``--socks*``, ``--noproxy``,
+    ``-U`` / ``--proxy-user``), ``None`` each when absent: argv read the way
+    curl reads it, option values never taken for options. A ``-K`` /
+    ``--config`` file may name a proxy: without another, its name is
+    ``proxy``. One ``--next`` group at a time."""
     from .argv import caller_steering as steering
 
     return steering(argv)
@@ -32,7 +34,7 @@ def caller_steering(argv):
 
 def requested_url(argv):
     """The URL ``argv`` asks for (``--url``, else the first positional), curl's
-    default scheme applied, or ``None``. Needs duho."""
+    default scheme applied, or ``None``; never an option's value. Needs duho."""
     from .argv import requested_url as requested
 
     return requested(argv)

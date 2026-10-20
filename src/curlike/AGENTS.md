@@ -45,12 +45,19 @@ curlike.describe_curl(path: str) -> tuple[tuple[int, ...] | None, bool]
   `--crlfile`, `--tlsv1*` and `--tls-max`; the proxy has their `--proxy-*`
   twins. `--pinnedpubkey` still applies. A context that is not an
   `ssl.SSLContext` raises `TypeError`.
-- `caller_steering(argv)` is `(proxy, noproxy, proxy_user)` as argv names them
-  (`-x`/`--proxy`, `--noproxy`, `-U`/`--proxy-user`), `None` each when
-  absent; `requested_url(argv)` the URL asked for (`--url`, else the first
+- `caller_steering(argv)` is `(proxy, noproxy, proxy_user)` as argv names them,
+  `None` each when absent: `proxy` the value of the last `-x`/`--proxy`,
+  `--proxy1.0`, `--preproxy` or `--socks*`, else of the last `-K`/`--config`
+  (a config file may name a proxy; it is not read, its name stands for one);
+  `noproxy` `--noproxy`; `proxy_user` `-U`/`--proxy-user`.
+  `requested_url(argv)` is the URL asked for (`--url`, else the first
   positional), curl's default scheme applied, or `None`. Both read argv the
-  way curl does (combined short flags, option values that look like
-  options) without running anything.
+  way curl does (combined short flags, `--opt=value`, `--expand-opt`, option
+  values that look like options) without running anything, with curl 8.23's
+  own table of the options that take a value (`curlike.argv.VALUE_OPTIONS`),
+  so an option's value is never taken for the URL or the proxy. Give them one
+  `--next` group at a time. `requested_url` needs duho; `caller_steering`
+  does not.
 - `find_real_curl(skip)` is the system curl on PATH, or `None`: PATH walked
   directory by directory, skipping the directory `skip`, any hit outside the
   directory searched and any hit with a `curl.py` beside it (a launcher of
@@ -367,7 +374,7 @@ documents them.
 
 | Variable | Sets | Default |
 | --- | --- | --- |
-| `<P>_PYLIB` | paths (`os.pathsep`-separated) to find duho in when it is not installed | none |
+| `<P>_PYLIB` | paths (`os.pathsep`-separated) to find duho in when it is not installed: for a host tool that runs curlike from a zipapp (`.pyz`) or a vendored directory | none |
 | `CURL_CA_BUNDLE` | curlike's CA bundle, as in curl | the OS trust store |
 
 The proxy, its credential, its kind and `NO_PROXY` are read by syshttp under
