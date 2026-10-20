@@ -670,6 +670,21 @@ def test_curl_ca_bundle_is_honoured(pki, tls_origin, monkeypatch, capsysbinary):
     assert rc == 0, "curl's own override replaces the OS store, as --cacert does"
 
 
+def test_curl_ca_bundle_is_read_as_curl_names_it_under_any_prefix(pki, tls_origin, monkeypatch, capsysbinary):
+    monkeypatch.setenv("SYSHTTP_PREFIX", "AGENTS_")
+    monkeypatch.setenv("CURL_CA_BUNDLE", str(pki / "ca.pem"))
+    rc, out = _fallback(monkeypatch, capsysbinary, ["-s", tls_origin + "/x"])
+    assert rc == 0, "SYSHTTP_PREFIX does not move curl's own variable"
+
+
+@pytest.mark.parametrize("variable", ["AGENTS_CURL_CA_BUNDLE", "CA_BUNDLE", "AGENTS_CA_BUNDLE"])
+def test_a_syshttp_setting_is_not_curls_ca_bundle(variable, pki, tls_origin, monkeypatch, capsysbinary):
+    monkeypatch.setenv("SYSHTTP_PREFIX", "AGENTS_:")
+    monkeypatch.setenv(variable, str(pki / "ca.pem"))
+    rc, out = _fallback(monkeypatch, capsysbinary, ["-s", tls_origin + "/x"])
+    assert rc == 60, "only CURL_CA_BUNDLE, as curl spells it, names curlike's bundle"
+
+
 # --------------------------------------------------------------------------- #
 # shared with syshttp: one implementation for the session and the fallback
 # --------------------------------------------------------------------------- #

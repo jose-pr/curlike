@@ -13,7 +13,7 @@ Built on duho: the options are mixin groups, one module per group --
 curl has and this does not honour are declared in ``unsupported`` and refused
 out loud (exit 2): it never silently does the wrong thing.
 
-duho comes from the interpreter, else from ``<P>_PYLIB`` (see ``_duho``). This package's ``__init__`` imports neither,
+duho comes from the interpreter, else from ``CURLIKE_PYLIB`` (see ``_duho``). This package's ``__init__`` imports neither,
 so the stdlib-only modules (``routing``) load without it.
 """
 

@@ -13,15 +13,18 @@ from syshttp.env import HTTPEnv
 
 from .errors import EXIT_RESOLVE_PROXY, LocalError
 
-# The variables curl reads for its proxy, after <P>_PROXY (curl's own order).
+# The variables that name a proxy after SYSHTTP_PROXY.
 _FALLBACK_VARS = ('HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy')
+# curl reads the lower-case spelling first.
+_NO_PROXY_VARS = ('no_proxy', 'NO_PROXY')
 
 
 def configured_text(env=None):
-    """The proxy as configured (``<P>_PROXY``, else the first ``*_PROXY``
-    variable), as typed, or ``None``: what curl's exit 5 checks."""
+    """The proxy as configured (``SYSHTTP_PROXY``, else the first ``*_PROXY``
+    variable, each under the first prefix that sets one), as typed, or
+    ``None``: what curl's exit 5 checks."""
     env = HTTPEnv() if env is None else env
-    return env.get(agent_proxy.PROXY) or env.conventional(*_FALLBACK_VARS)
+    return env.get(agent_proxy.PROXY) or env.get(*_FALLBACK_VARS)
 
 
 def userinfo(url):
@@ -115,8 +118,8 @@ def proxy_url(text):
 
 
 def _proxy_variables(env):
-    """The variables that hold a proxy URL, ``<P>_PROXY`` first."""
-    return [name for name in (env.name(agent_proxy.PROXY),) + _FALLBACK_VARS if name]
+    """Every variable that may hold a proxy URL, under each prefix."""
+    return [prefix + name for prefix in env.prefixes for name in (agent_proxy.PROXY,) + _FALLBACK_VARS]
 
 
 def _userinfo_text(url):
@@ -135,7 +138,7 @@ def plan(proxy=None, noproxy=None, proxy_user=None, *, url, env=None):
     reads it (:func:`proxy_url`); the ``ValueError`` for a setting that
     cannot be used never carries a credential."""
     env = HTTPEnv() if env is None else env
-    no_proxy = noproxy if noproxy is not None else env.conventional('NO_PROXY', 'no_proxy')
+    no_proxy = noproxy if noproxy is not None else env.get(*_NO_PROXY_VARS)
     typed = [proxy]
     try:
         environ = dict(env.environ)
@@ -146,7 +149,7 @@ def plan(proxy=None, noproxy=None, proxy_user=None, *, url, env=None):
         # No bypass in the map, loopback included (curl proxies it): a plan is
         # kept for the redirect hops, whose hosts the plan's own list decides.
         entry = first_entry(
-            agent_proxy.proxy_map(proxy_url(proxy), '<-loopback>', proxy_user, env=HTTPEnv(env.prefix, environ)), url
+            agent_proxy.proxy_map(proxy_url(proxy), '<-loopback>', proxy_user, env=HTTPEnv(env.prefixes, environ)), url
         )
     except ValueError as exc:
         message = str(exc)
@@ -239,7 +242,7 @@ class AgentProxyHandler(urllib.request.BaseHandler):
     for https through a ``connect`` proxy it rides on the CONNECT alone
     (``connector.ConnectHTTPSHandler``) -- urllib itself moves only a header named
     ``Proxy-Authorization`` there and would send any other name
-    (``<P>_PROXY_AUTH_HEADER``) through the tunnel to the origin."""
+    (``SYSHTTP_PROXY_AUTH_HEADER``) through the tunnel to the origin."""
 
     handler_order = 90  # before the (empty) ProxyHandler at 100
 

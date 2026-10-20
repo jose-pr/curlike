@@ -9,6 +9,7 @@ the prefix gateway, ``hello`` that it went direct.
 """
 
 import base64
+import socket
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -386,3 +387,115 @@ def test_a_refused_proxy_setting_never_shows_the_password(monkeypatch, capsysbin
     argv = ["-sS", "-x", "http://agent:p%40ss@127.0.0.1:1", "-U", "me:pw", "http://example.invalid/"]
     rc, out = _fallback(monkeypatch, capsysbinary, argv)
     assert rc == 2 and out.err == b"curl: (2) invalid proxy URL 'http://***@127.0.0.1:1': refused\n", out.err
+
+
+# --------------------------------------------------------------------------
+# SYSHTTP_PREFIX: each proxy variable is read as <PREFIX><NAME>, prefix by prefix
+# --------------------------------------------------------------------------
+
+
+def _dead_port():
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def _dead_proxy():
+    return "http://127.0.0.1:%d" % _dead_port()
+
+
+def test_a_prefix_moves_the_proxy_settings_syshttp_owns(target, proxy, monkeypatch, capsysbinary):
+    _Proxy.expected = BEARER
+    monkeypatch.setenv("SYSHTTP_PREFIX", "AGENTS_")
+    monkeypatch.setenv("AGENTS_SYSHTTP_PROXY", "http://" + proxy)
+    monkeypatch.setenv("AGENTS_SYSHTTP_PROXY_AUTH", BEARER)
+    monkeypatch.setenv("SYSHTTP_PROXY", _dead_proxy())  # not read under this prefix
+    rc, out = _fallback(monkeypatch, capsysbinary, ["-s", target + "/x"])
+    assert rc == 0 and out.out == b"via-proxy", out.err
+    assert _Proxy.seen[-1] == (target + "/x", BEARER)
+
+
+@pytest.mark.parametrize("variable", ["HTTP_PROXY", "http_proxy", "ALL_PROXY"])
+def test_a_prefix_moves_the_conventional_proxy_variables(variable, target, proxy, monkeypatch, capsysbinary):
+    monkeypatch.setenv("SYSHTTP_PREFIX", "AGENTS_")
+    monkeypatch.setenv("AGENTS_" + variable, "http://agent:s3cret@" + proxy + "/path")
+    monkeypatch.setenv(variable, _dead_proxy())  # not read under this prefix
+    rc, out = _fallback(monkeypatch, capsysbinary, ["-s", target + "/x"])
+    assert rc == 0 and out.out == b"via-proxy", out.err
+    assert _Proxy.seen[-1] == (target + "/x", BASIC)
+
+
+def test_a_prefix_hides_the_unprefixed_proxy_settings(target, proxy, monkeypatch, capsysbinary):
+    monkeypatch.setenv("SYSHTTP_PREFIX", "AGENTS_")
+    for variable in ("SYSHTTP_PROXY", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
+        monkeypatch.setenv(variable, "http://agent:s3cret@" + proxy)
+    rc, out = _fallback(monkeypatch, capsysbinary, ["-s", target + "/x"])
+    assert rc == 0 and out.out == b"hello" and _Proxy.seen == []
+
+
+def test_a_prefix_moves_no_proxy_and_the_machine_credential(target, proxy, monkeypatch, capsysbinary):
+    monkeypatch.setenv("SYSHTTP_PREFIX", "AGENTS_")
+    monkeypatch.setenv("AGENTS_HTTP_PROXY", "http://" + proxy)
+    monkeypatch.setenv("AGENTS_HTTP_PROXY_AUTH", BASIC)
+    monkeypatch.setenv("HTTP_PROXY_AUTH", "Bearer wrong")
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1")  # not read under this prefix
+    rc, out = _fallback(monkeypatch, capsysbinary, ["-s", target + "/x"])
+    assert rc == 0 and out.out == b"via-proxy", out.err
+    assert _Proxy.seen[-1] == (target + "/x", BASIC)
+    monkeypatch.setenv("AGENTS_NO_PROXY", "127.0.0.1")
+    rc, out = _fallback(monkeypatch, capsysbinary, ["-s", target + "/x"])
+    assert rc == 0 and out.out == b"hello"
+
+
+def test_a_prefix_list_reads_each_variable_under_the_first_prefix_that_sets_it(
+    target, proxy, monkeypatch, capsysbinary
+):
+    monkeypatch.setenv("SYSHTTP_PREFIX", "AGENTS_:")
+    monkeypatch.setenv("HTTP_PROXY", _dead_proxy())
+    monkeypatch.setenv("AGENTS_HTTP_PROXY", "http://agent:s3cret@" + proxy)
+    rc, out = _fallback(monkeypatch, capsysbinary, ["-s", target + "/x"])
+    assert rc == 0 and out.out == b"via-proxy", "the prefixed variable comes first"
+    monkeypatch.delenv("AGENTS_HTTP_PROXY")
+    rc, out = _fallback(monkeypatch, capsysbinary, ["-s", target + "/x"])
+    assert rc == 7, "the unprefixed variable is the next prefix's"
+
+
+def test_a_prefix_moves_the_proxy_syntax_check(target, monkeypatch, capsysbinary):
+    monkeypatch.setenv("SYSHTTP_PREFIX", "AGENTS_")
+    monkeypatch.setenv("HTTPS_PROXY", "http://agent:p@ss@[bad")
+    rc, out = _fallback(monkeypatch, capsysbinary, ["-sS", target + "/x"])
+    assert rc == 0 and out.out == b"hello", out.err
+    monkeypatch.setenv("AGENTS_HTTPS_PROXY", "http://agent:p@ss@[bad")
+    rc, out = _fallback(monkeypatch, capsysbinary, ["-sS", target + "/x"])
+    assert rc == 5 and b"in 'http://***@[bad': " in out.err, out.err
+    assert b"agent" not in out.err and b"ss@" not in out.err
+
+
+def test_a_bad_setting_is_named_by_the_variable_found(target, monkeypatch, capsysbinary):
+    monkeypatch.setenv("SYSHTTP_PREFIX", "AGENTS_")
+    monkeypatch.setenv("AGENTS_SYSHTTP_PROXY", "http://proxy.example:3128")
+    monkeypatch.setenv("AGENTS_SYSHTTP_PROXY_TYPE", "socks5")
+    rc, out = _fallback(monkeypatch, capsysbinary, ["-s", target + "/x"])
+    assert rc == 2 and out.err.startswith(b"curl: (2) AGENTS_SYSHTTP_PROXY_TYPE"), out.err
+
+
+def test_a_refused_credential_names_its_variable_not_its_value():
+    from syshttp.env import HTTPEnv
+
+    from curlike import routing
+
+    secret = "Bearer s3cret\r\nInjected: yes"
+    env = HTTPEnv("AGENTS_", {"AGENTS_SYSHTTP_PROXY": "http://proxy.example:3128", "AGENTS_SYSHTTP_PROXY_AUTH": secret})
+    with pytest.raises(ValueError) as caught:
+        routing.plan(url="http://example.invalid/", env=env)
+    assert "AGENTS_SYSHTTP_PROXY_AUTH" in str(caught.value) and "s3cret" not in str(caught.value)
+
+
+def test_no_proxy_is_read_lower_case_first_as_curl_does():
+    from syshttp.env import HTTPEnv
+
+    from curlike import routing
+
+    env = HTTPEnv(environ={"NO_PROXY": "upper.example", "no_proxy": "lower.example"})
+    plan = routing.plan(proxy="http://proxy.example:3128", url="http://lower.example/", env=env)
+    assert plan.no_proxy == "lower.example" and plan.bypasses("http://lower.example/")

@@ -219,7 +219,7 @@ def _header_defect(response):
 
 def build_opener(args, plan, context, transfer, removed):
     """The opener for one attempt. It always carries an EMPTY ProxyHandler:
-    urllib's own would re-read the global vars (never <P>_PROXY), re-check
+    urllib's own would re-read the global vars (never SYSHTTP_PROXY), re-check
     NO_PROXY and, on Windows, the registry's bypass list -- and silently go
     direct where we decided to proxy. ``AgentProxyHandler`` applies the plan
     per hop instead."""

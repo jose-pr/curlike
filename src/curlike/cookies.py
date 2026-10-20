@@ -1,7 +1,7 @@
 """Cookie options: ``-b`` (a string, or a Netscape jar filtered to the URL)
 and ``-c`` (the response's cookies written back as a jar) -- on
-``syshttp.cookies``, the same reading, matching and writing the session
-toolkit uses."""
+``syshttp.cookies``, the same reading, matching and writing syshttp's
+client uses."""
 
 import os
 import shutil

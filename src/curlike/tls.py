@@ -44,7 +44,8 @@ def _pem_only(option, value):
         raise NotImplementedError('Unsupported %s: %s (the fallback reads PEM only)' % (option, value))
 
 
-#: curl's own override of the CA bundle, honoured like ``--cacert``.
+#: curl's own override of the CA bundle, honoured like ``--cacert``. It is read
+#: as curl names it, not through ``SYSHTTP_PREFIX`` (syshttp's ``CA_BUNDLE`` is another setting).
 CA_BUNDLE_VAR = 'CURL_CA_BUNDLE'
 
 
@@ -84,8 +85,8 @@ def build_ssl_context(
 ):
     """An SSL context. The server is verified against ``cacert`` / ``capath``
     when given, else ``$CURL_CA_BUNDLE`` (both replace the trust store, as in
-    curl), else the OS trust store -- ``syshttp.tls``, the store the requests
-    session verifies against too; ``insecure`` (-k) verifies nothing.
+    curl), else the OS trust store -- ``syshttp.tls``, the store syshttp's
+    client verifies against too; ``insecure`` (-k) verifies nothing.
     ``cert`` (``file[:password]``, may hold the key) / ``key`` /
     ``passphrase`` present a client certificate. ``min_version`` /
     ``max_version`` (``ssl.TLSVersion``) bound the protocol; ``ciphers`` is
