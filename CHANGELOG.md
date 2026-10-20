@@ -47,6 +47,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   no Accept-Encoding: identity. Connection: close remains, the one difference,
   because each transfer is one request on one connection.
 
+- Two URLs, an unknown option and a missing option value are curl-style one-
+  line usage errors (exit 2, with the --help hint) instead of argparse's
+  52-line usage dump.
+
 ### Removed
 
 - `<P>_CURL_COMPAT` and the per-version answers behind it (`curlike.compat`):
@@ -165,4 +169,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   read and written as bytes. A URL with a space or control character is exit 3
   (not 8) and nothing is sent; non-ASCII characters in a URL are sent percent-
   encoded as UTF-8 (a host as IDNA) instead of exit 2.
+
+- -J reads filename= only at a parameter's start and gives a Windows name as
+  curl does (no drive-relative C:evil out of --output-dir, no device names);
+  -O with no name in the URL writes the last segment or curl_response (exit 23
+  before); a -c jar that cannot be written no longer ends in a traceback;
+  --etag-save is created before the transfer (26 when it cannot be); -b is a
+  file when it has no = (a missing one holds nothing, - is stdin) and -c -
+  writes the jar to stdout; -d @file also drops NUL and an unreadable data, -H
+  or -w file is curl's three lines; --data-urlencode and --url-query write a
+  space as +; -d x --json y joins with no &; -F takes @"file;name" and
+  type=...;charset=..., and no longer types .json as application/json; -T
+  sends no Content-Type and adds no file name to a URL with a query; -I -X
+  POST sends POST; %{json} writes "" for the addresses of a transfer that
+  never connected; the connect failure reads host:port.
 
