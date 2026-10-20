@@ -201,3 +201,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   prints curl's three lines, an unknown --proto name prints no first line, a
   proxy with no scheme is shown as http://..., and the glob error words match.
 
+- `curlike.caller_steering()` and `requested_url()` read argv with curl 8.23's
+  own table of the options that take a value: those the fallback never
+  declared (22 long ones in curl 8.21: `--proxy1.0`, `--hsts`, `--rate`, ...,
+  and `-P`) no longer leave their value as the URL, and `--expand-NAME` is read as `--NAME`. A `--proxy1.0`,
+  `--preproxy` or `-K`/`--config` (alone or inside a short cluster such as
+  `-sK`) counts as the caller naming a proxy. `caller_steering` no longer
+  needs duho.
+
+- The proxy-syntax error (exit 5) hides the whole userinfo as `***`
+  (`http://***@host`), whatever the password holds (`/`, `?`, `#`, `@`);
+  it used to print a password containing `/`, or its tail after an `@`.
+
+- Ctrl-C ends `curlike.main()` with exit 130 and nothing printed, as with curl,
+  instead of a Python traceback.
+
