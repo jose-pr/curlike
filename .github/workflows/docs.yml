@@ -38,10 +38,6 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
-# The syshttp commit of 0.1.0.dev19, the floor in pyproject.toml; bump it with the floor.
-env:
-  SYSHTTP_REF: b7c599c5f020a19e99afa131d9b4b2037f24bfe3
-
 jobs:
   docs-build:
     name: Build documentation site
@@ -57,8 +53,6 @@ jobs:
       - uses: actions/configure-pages@v6
         with:
           enablement: true
-      - name: Install syshttp from its repository (not yet on PyPI)
-        run: python -m pip install "syshttp @ git+https://github.com/jose-pr/syshttp@${{ env.SYSHTTP_REF }}"
       - name: Install package with docs tooling
         run: python -m pip install -e ".[dev,docs,dns]"
       - name: Build docs
