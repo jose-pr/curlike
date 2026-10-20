@@ -135,14 +135,15 @@ def test_the_decoder_takes_the_body_in_any_pieces(wrap):
     packed = wrap(plain)
     name = "gzip" if wrap is gzip.compress else "deflate"
     decoder = Decoder([("Content-Encoding", name)])
-    out = b"".join(decoder.feed(packed[i : i + 7]) for i in range(0, len(packed), 7)) + decoder.finish()
+    out = b"".join(piece for i in range(0, len(packed), 7) for piece in decoder.feed(packed[i : i + 7]))
+    decoder.finish()
     assert out == plain
 
 
 def test_the_decoder_refuses_what_it_cannot_undo():
     with pytest.raises(EncodingError):
         Decoder([("Content-Encoding", "br")])
-    assert Decoder([("Content-Encoding", "identity")]).feed(b"as is") == b"as is"
+    assert b"".join(Decoder([("Content-Encoding", "identity")]).feed(b"as is")) == b"as is"
 
 
 def test_remove_on_error_removes_a_file_this_run_overwrote(server, tmp_path, monkeypatch, capsysbinary):

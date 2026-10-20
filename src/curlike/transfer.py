@@ -18,7 +18,7 @@ from syshttp.retry import retry_after
 from .body import FORM_CONTENT_TYPE
 from .download import EXIT_FILESIZE
 from .connection import MAX_RETRY_SLEEP
-from .delivery import BodyReader, Decoder, EncodingError, TooSlow
+from .delivery import BodyReader, Decoder, EncodingError, TooSlow, encodings
 from .errors import (
     EXIT_CONNECT,
     EXIT_EMPTY_REPLY,
@@ -609,6 +609,8 @@ def exchange(args, opener, req, url, transfer, may_retry=False):
     args.save_cookie_jar()
     try:
         decoder = Decoder(header_items) if args.compressed and not args.head else None
+        if args.compressed and args.head:
+            encodings(header_items)  # curl's limit holds with no body to decode
     except EncodingError as exc:
         resp.close()
         return fail(args, transfer, EXIT_BAD_ENCODING, str(exc))
@@ -687,9 +689,13 @@ def _deliver(args, resp, status, header_items, transfer, sink, decoder, may_retr
             if args.too_big(header_items, transfer.size_download):
                 too_big = True
                 break
-            sink.body(decoder.feed(piece) if decoder else piece)
+            if decoder:
+                for decoded in decoder.feed(piece):
+                    sink.body(decoded)
+            else:
+                sink.body(piece)
         if reader.cut is None and not too_big and decoder:
-            sink.body(decoder.finish())
+            decoder.finish()
     sink.close()  # what was held back reaches its destination; a file opens even when empty
     transfer.size_delivered = sink.delivered
     if too_big:

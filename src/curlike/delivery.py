@@ -35,56 +35,81 @@ class _Layer(object):
         self.inflater = zlib.decompressobj(zlib.MAX_WBITS if zlib_wrapped else -zlib.MAX_WBITS)
 
     def feed(self, data):
+        """``data`` undone, as a generator of pieces of at most ``PIECE``
+        bytes: a layer never holds more output than one piece."""
         if not data:
-            return b''
+            return
         try:
             if self.inflater is None:
                 self._deflate_start(data)
             self.started = True
-            out = []
-            while data:
-                out.append(self.inflater.decompress(data))
-                if not (self.gzip and self.inflater.eof and self.inflater.unused_data):
-                    break
-                data = self.inflater.unused_data  # the next gzip member
-                self.inflater = zlib.decompressobj(16 + zlib.MAX_WBITS)
-            return b''.join(out)
+            while True:
+                out = self.inflater.decompress(data, PIECE)
+                if out:
+                    yield out
+                if self.inflater.eof:
+                    data = self.inflater.unused_data  # past the stream: a gzip's next member
+                    if not (self.gzip and data):
+                        return
+                    self.inflater = zlib.decompressobj(16 + zlib.MAX_WBITS)
+                    continue
+                data = self.inflater.unconsumed_tail
+                # A full piece may leave output inside zlib with no input left.
+                if not data and len(out) < PIECE:
+                    return
         except zlib.error as exc:
             raise EncodingError('Error while processing content unencoding: %s' % str(exc).rpartition(': ')[2])
 
     def finish(self):
         if self.started and not self.inflater.eof:
             raise EncodingError('Error while processing content unencoding: the data ends early')
-        return b''
+
+
+def _through(layer, pieces):
+    for piece in pieces:
+        yield from layer.feed(piece)
+
+
+#: The most content encodings a response may name (curl's limit); more is exit 61.
+MAX_ENCODINGS = 5
+
+
+def encodings(header_items):
+    """The ``Content-Encoding`` names of a response, lower-cased, in the order
+    applied. More than ``MAX_ENCODINGS`` is :class:`EncodingError`."""
+    names = []
+    for name, value in header_items:
+        if name.lower() == 'content-encoding':
+            names += [e.strip().lower() for e in value.split(',') if e.strip()]
+    if len(names) > MAX_ENCODINGS:
+        raise EncodingError('Reject response exceeding limit of %d content encodings' % MAX_ENCODINGS)
+    return names
 
 
 class Decoder(object):
     """The ``Content-Encoding`` layers of a response, undone in turn (the
-    last applied first). An encoding it cannot undo raises
-    :class:`EncodingError` when built, as curl fails with 61 at the headers."""
+    last applied first). An encoding it cannot undo, or more than
+    ``MAX_ENCODINGS`` of them, raises :class:`EncodingError` when built, as
+    curl fails with 61 at the headers."""
 
     def __init__(self, header_items):
-        names = []
-        for name, value in header_items:
-            if name.lower() == 'content-encoding':
-                names += [e.strip().lower() for e in value.split(',') if e.strip()]
-        self.layers = [_Layer(name) for name in reversed(names) if name != 'identity']
+        self.layers = [_Layer(name) for name in reversed(encodings(header_items)) if name != 'identity']
 
     def feed(self, data):
+        """``data`` decoded: a generator of pieces of at most ``PIECE``
+        bytes. Each layer reads one piece of the one before only when asked
+        for more, so a small body cannot expand in memory past a piece per
+        layer."""
+        pieces = iter((data,))
         for layer in self.layers:
-            data = layer.feed(data)
-        return data
+            pieces = _through(layer, pieces)
+        return pieces
 
     def finish(self):
-        """The data held back at the end of the body; a layer whose stream was
-        cut short is :class:`EncodingError`."""
-        out = b''
-        for index, layer in enumerate(self.layers):
-            tail = layer.finish()
-            for later in self.layers[index + 1 :]:
-                tail = later.feed(tail)
-            out += tail
-        return out
+        """At the end of the body: a layer whose stream was cut short is
+        :class:`EncodingError`."""
+        for layer in self.layers:
+            layer.finish()
 
 
 class BodyReader(object):
