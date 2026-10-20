@@ -15,8 +15,12 @@ from curlike.argv import VALUE_OPTIONS, attach_values
 URL = "http://origin.example/x"
 
 # `-A, --user-agent <name>` and `    --alt-svc <filename>` take one; `-a, --append` and `-:, --next` do not.
-_WITH_ARGUMENT = re.compile(r"^ *(?:(-[^,\s]), )?(--[^\s<]+) <")
-_WITHOUT_ARGUMENT = re.compile(r"^ *(?:(-[^,\s]), )?(--\S+)(?= {2,}|$)")
+# Older layouts differ: 8.11 shows `--proxy [protocol://]host[:port]` without angle brackets, and 8.5 follows
+# a name as wide as the column with one space, not several.
+_WITH_ARGUMENT = re.compile(r"^ *(?:(-[^,\s]), )?(--[^\s<\[]+) [<\[]")
+_WITHOUT_ARGUMENT = re.compile(r"^ *(?:(-[^,\s]), )?(--\S+)(?= |$)")
+# Options an older `--help all` lists without the value they take, and the release that fixed the line.
+LISTED_WITHOUT_VALUE = {"--haproxy-clientip": (8, 6, 0)}
 
 
 def _help_all():
@@ -24,16 +28,27 @@ def _help_all():
     if not path:
         pytest.skip("no real curl on PATH")
     out = subprocess.run([path, "--help", "all"], capture_output=True, stdin=subprocess.DEVNULL, timeout=30)
-    with_argument, without = set(), set()
+    with_argument, without, unread = set(), set(), []
     for line in out.stdout.decode("utf-8", "replace").splitlines():
-        found = _WITH_ARGUMENT.match(line)
-        if found:
-            with_argument.update(name for name in found.groups() if name)
+        if not line.lstrip().startswith("-"):
             continue
-        found = _WITHOUT_ARGUMENT.match(line)
+        found = _WITH_ARGUMENT.match(line)
+        names = with_argument
+        if not found:
+            found = _WITHOUT_ARGUMENT.match(line)
+            names = without
         if found:
-            without.update(name for name in found.groups() if name)
-    assert len(with_argument) > 100 and len(without) > 100, "`--help all` was not read: %r" % out.stdout[:300]
+            names.update(name for name in found.groups() if name)
+        else:
+            unread.append(line)
+    assert not unread and len(with_argument) > 100 and len(without) > 100, "`--help all` was not read: %r" % (
+        unread[:3] or out.stdout[:300]
+    )
+    version = realcurl.describe(path)[0] or (0, 0, 0)
+    for name, fixed in LISTED_WITHOUT_VALUE.items():
+        if version < fixed and name in without:
+            without.discard(name)
+            with_argument.add(name)
     return with_argument, without
 
 
