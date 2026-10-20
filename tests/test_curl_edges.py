@@ -265,10 +265,13 @@ def test_ctrl_c_is_a_silent_130(monkeypatch, capsysbinary):
     class Interrupting(BaseHTTPRequestHandler):
         def do_GET(self):
             _thread.interrupt_main()  # the main thread is waiting for this reply
-            self.send_response(200)
-            self.send_header("Content-Length", "4")
-            self.end_headers()
-            self.wfile.write(b"late")
+            try:
+                self.send_response(200)
+                self.send_header("Content-Length", "4")
+                self.end_headers()
+                self.wfile.write(b"late")
+            except OSError:
+                pass  # the client left on the interrupt; the server must not print that
 
         def log_message(self, *args):
             pass
