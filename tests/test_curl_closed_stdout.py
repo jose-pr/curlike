@@ -54,9 +54,13 @@ def _serve(listener):
             method, path = head.split(b" ")[:2] if b" " in head else (b"GET", b"/n0")
             body = b"y" * int(path.rsplit(b"n", 1)[1])
             time.sleep(0.4)
+            conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             try:
                 conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n" % len(body))
                 if method != b"HEAD":
+                    # Sent apart, the reader takes the head alone and its first body read is a full
+                    # 16384 bytes; sent together, that read is what the head left of an 8192-byte one.
+                    time.sleep(0.1)
                     conn.sendall(body)
             except OSError:
                 pass
