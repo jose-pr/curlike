@@ -216,3 +216,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Ctrl-C ends `curlike.main()` with exit 130 and nothing printed, as with curl,
   instead of a Python traceback.
 
+### Security
+
+- Answering a 401 (`--digest`, `--anyauth`) for an https URL through an HTTP
+  proxy re-sent the request in clear inside the tunnel: the password or Digest
+  answer, cookies and every `-H` value were readable by the proxy and the
+  network, and the request then failed with exit 52. With `-p`, the second
+  CONNECT went to the proxy's own address. The answer now goes over a CONNECT
+  to the origin and the origin's TLS, as the first attempt did.
+
+- `-O` and `--remote-name-all` percent-decoded the URL's last path segment, so
+  `..%2F..%2Fname` (and `..%5C..%5Cname`, `C%3A%5C...` on Windows) wrote
+  outside the current or `--output-dir` directory, overwriting what was there.
+  The file is named after the segment as written, as curl does (`.` and `..`
+  resolved, a backslash separating); on Windows `:` becomes `_` and a device
+  name such as `CON` gets a `_`.
+
+- `--compressed` decodes in pieces of at most 16 KiB per layer: a 1.7 KB body
+  with `Content-Encoding: gzip, gzip` held about 2 GB in memory. A response
+  naming more than 5 content encodings (curl's limit) is exit 61.
+
+- `--proxy-anyauth` and `--proxy-digest` answer only a 407 that the proxy
+  sent. An origin's 407, from a host reached directly (`--noproxy`,
+  `NO_PROXY`, a redirect hop that bypasses the proxy) or inside a tunnel, is
+  the response, and the proxy credential is never sent to it.
+
+- A proxy URL with a path, query or fragment (`-x`, `<P>_PROXY`, `HTTP_PROXY`)
+  is the proxy, as in curl, instead of exit 2 with a message that printed the
+  password in full. A refused proxy setting never shows the password or the
+  `-U` credential in its message.

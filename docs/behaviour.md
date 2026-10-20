@@ -72,15 +72,20 @@
     entry. The netrc reads `"quoted words"` with backslash escapes, ends a line
     at a word starting with `#` and skips `macdef` bodies. `--digest` (MD5,
     SHA-256) and `--anyauth` (Basic when that is all the server offers) answer
-    a 401 once: a rejected credential is not sent again, and a challenge
-    curlike cannot answer is the response. `-n` without a netrc is exit 26.
+    a 401 once, over a connection of the same kind as the first request (an
+    https URL through a proxy: the CONNECT, then the origin's TLS again; `-p`:
+    a CONNECT to the origin): a rejected credential is not sent again, and a
+    challenge curlike cannot answer is the response. `-n` without a netrc is exit 26.
   - **Downloads**: `-C -` resumes from the file's size (a server ignoring the
     range is exit 33, a 416 means already complete); `-J` takes the
     `Content-Disposition` `filename=` (at a parameter's start) without its
     directories, as a Windows name curl would make it (`:<>"|?*` become `_`,
     a device name like `CON` gets a `_`), and never overwrites (exit 23); `-O`
-    with no name in the URL writes the last non-empty path segment, else
-    `curl_response`; `--etag-save` is created before the transfer (26, "no
+    names the file after the URL's last non-empty path segment as written
+    (a backslash separates, `.` and `..` resolve, nothing is percent-decoded:
+    `%2F` stays three characters), so it never leaves the current or
+    `--output-dir` directory, else `curl_response`; on Windows `:` and the like
+    become `_`; `--etag-save` is created before the transfer (26, "no
     transfer performed", when it cannot be); `-R` sets the mtime from `Last-Modified`; `-z DATE|FILE` (`-z
     -DATE`: unmodified since) and `--etag-compare` make the request conditional,
     and an unmet condition or a 304 writes no file; `--no-clobber` writes
@@ -92,7 +97,8 @@
     with `-C`: exit 2).
   - **Proxies**: `-x` takes `http://` and `socks4://` / `socks4a://` /
     `socks5://` / `socks5h://` (`socks://` is SOCKS4), as does
-    `<P>_PROXY`; the `--socks*` flags name one too and override `-x`.
+    `<P>_PROXY`; the `--socks*` flags name one too and override `-x`. A proxy
+    URL's path, query and fragment are ignored, as in curl.
     `socks5` and `socks4` resolve the name here, `socks5h` and `socks4a` let
     the proxy do it; SOCKS5 credentials come from `-U` or the URL. A SOCKS
     handshake that fails is exit 97 (refused, unreachable, rejected
@@ -107,7 +113,8 @@
     `--cacert` or `-k`, which stay the origin's; an https target goes through
     it with the origin's TLS inside the proxy's. `--proxy-digest` sends no credential up front and
     answers the proxy's 407 once with Digest (MD5 / SHA-256), on the plain
-    request or on the CONNECT; `--proxy-anyauth` takes Digest when offered, else
+    request or on the CONNECT -- never an origin's 407, reached directly or
+    through a tunnel, which is the response; `--proxy-anyauth` takes Digest when offered, else
     Basic. NTLM, Negotiate and SOCKS5 GSS-API are not available (no standard-
     library implementation): those flags stay refused.
   - **URLs as curl reads them**: `/a/../b` is sent as `/b` and `/a/./b/.` as
@@ -192,7 +199,9 @@
     line over 100 KB exit 100, a `Content-Length` that is not one number (or
     negative) or a NUL in a header exit 8. The body is delivered as it
     arrives, not held: `-N` writes each piece at once, `--compressed`
-    decodes piece by piece, `-T FILE` is read as it is sent, and nothing
+    decodes piece by piece (at most 5 content encodings, as in curl: exit 61
+    beyond; each layer passes on pieces of at most 16 KiB, so a small nested
+    gzip body cannot grow in memory), `-T FILE` is read as it is sent, and nothing
     process-wide (`http.client`'s limits, `socket.getaddrinfo`) is changed
     for a transfer.
   - `--json` sends `Content-Type` and `Accept: application/json` (repeats
