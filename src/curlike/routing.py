@@ -98,17 +98,62 @@ def prefix_url(target, proxy, endpoint):
     return proxy.rstrip('/') + endpoint + target
 
 
+def proxy_url(text):
+    """``text`` as curl reads a proxy URL: its path, query and fragment are
+    ignored. A gateway (``prefix+http://``) keeps its path, the endpoint."""
+    if not text:
+        return text
+    try:
+        parts = urllib.parse.urlsplit(text if '://' in text else 'http://' + text)
+    except ValueError:
+        return text  # check_proxy_syntax reports it
+    if parts.scheme.lower().startswith('prefix+') or (
+        parts.path in ('', '/') and not parts.query and not parts.fragment
+    ):
+        return text
+    return urllib.parse.urlunsplit(parts._replace(path='', query='', fragment=''))
+
+
+def _proxy_variables(env):
+    """The variables that hold a proxy URL, ``<P>_PROXY`` first."""
+    return [name for name in (env.name(agent_proxy.PROXY),) + _FALLBACK_VARS if name]
+
+
+def _userinfo_text(url):
+    """What precedes the last ``@`` of ``url`` as typed (a password may hold
+    ``/``, ``?``, ``#`` or ``@``), or ``''``."""
+    scheme = _SCHEME.match(url or '')
+    return (url or '')[len(scheme.group(0)) if scheme else 0 :].rpartition('@')[0]
+
+
 def plan(proxy=None, noproxy=None, proxy_user=None, *, url, env=None):
     """The :class:`ProxyPlan` for a transfer to ``url``, or ``None`` for
     direct: syshttp's proxy map (``-x`` / ``-U`` as given), the first
     reachable entry of a list (``proxylib.NoReachableProxyError`` when none
     answers and it holds no DIRECT). The bypass list (``--noproxy``, else
-    ``NO_PROXY``) is the plan's, checked per hop."""
+    ``NO_PROXY``) is the plan's, checked per hop. A proxy URL is read as curl
+    reads it (:func:`proxy_url`); the ``ValueError`` for a setting that
+    cannot be used never carries a credential."""
     env = HTTPEnv() if env is None else env
     no_proxy = noproxy if noproxy is not None else env.conventional('NO_PROXY', 'no_proxy')
-    # No bypass in the map, loopback included (curl proxies it): a plan is
-    # kept for the redirect hops, whose hosts the plan's own list decides.
-    entry = first_entry(agent_proxy.proxy_map(proxy, '<-loopback>', proxy_user, env=env), url)
+    typed = [proxy]
+    try:
+        environ = dict(env.environ)
+        for name in _proxy_variables(env):
+            typed.append(environ.get(name))
+            if environ.get(name):
+                environ[name] = proxy_url(environ[name].strip())
+        # No bypass in the map, loopback included (curl proxies it): a plan is
+        # kept for the redirect hops, whose hosts the plan's own list decides.
+        entry = first_entry(
+            agent_proxy.proxy_map(proxy_url(proxy), '<-loopback>', proxy_user, env=HTTPEnv(env.prefix, environ)), url
+        )
+    except ValueError as exc:
+        message = str(exc)
+        for secret in [_userinfo_text(text) for text in typed] + [proxy_user or '']:
+            for form in filter(None, (secret, repr(secret)[1:-1])):
+                message = message.replace(form, '***')
+        raise ValueError(message) from None
     return None if entry is None else ProxyPlan.of(entry, no_proxy)
 
 

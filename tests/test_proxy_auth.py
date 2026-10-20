@@ -355,3 +355,34 @@ def test_the_proxy_syntax_error_never_shows_the_password(monkeypatch, capsysbina
     rc, out = _fallback(monkeypatch, capsysbinary, ["-sS", "http://example.invalid/"])
     assert rc == 5 and b"in 'http://***@[bad': " in out.err, out.err
     assert b"agent" not in out.err and b"ss@" not in out.err
+
+
+# --------------------------------------------------------------------------
+# A proxy URL's path, query and fragment are ignored, as curl does; no message carries a password
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("tail", ["/path", "/a/b/", "/?q=1#frag", "?q=1", "#frag"])
+def test_a_proxy_url_with_a_path_is_still_the_proxy(tail, target, proxy, monkeypatch, capsysbinary):
+    argv = ["-sS", "-x", "http://agent:s3cret@" + proxy + tail, target + "/x"]
+    rc, out = _fallback(monkeypatch, capsysbinary, argv)
+    assert rc == 0 and out.out == b"via-proxy", out.err
+    assert _Proxy.seen[-1] == (target + "/x", BASIC)
+
+
+@pytest.mark.parametrize("variable", ["SYSHTTP_PROXY", "HTTP_PROXY", "http_proxy", "ALL_PROXY"])
+def test_a_configured_proxy_url_with_a_path_is_still_the_proxy(variable, target, proxy, monkeypatch, capsysbinary):
+    monkeypatch.setenv(variable, "http://agent:s3cret@" + proxy + "/path")
+    rc, out = _fallback(monkeypatch, capsysbinary, ["-sS", target + "/x"])
+    assert rc == 0 and out.out == b"via-proxy", out.err
+    assert _Proxy.seen[-1] == (target + "/x", BASIC)
+
+
+def test_a_refused_proxy_setting_never_shows_the_password(monkeypatch, capsysbinary):
+    def refuse(proxy=None, *args, **kwargs):
+        raise ValueError("invalid proxy URL %r: refused" % (proxy,))
+
+    monkeypatch.setattr(agent_proxy, "proxy_map", refuse)
+    argv = ["-sS", "-x", "http://agent:p%40ss@127.0.0.1:1", "-U", "me:pw", "http://example.invalid/"]
+    rc, out = _fallback(monkeypatch, capsysbinary, argv)
+    assert rc == 2 and out.err == b"curl: (2) invalid proxy URL 'http://***@127.0.0.1:1': refused\n", out.err
