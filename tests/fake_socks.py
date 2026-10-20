@@ -29,6 +29,7 @@ def _pipe(a, b):
     t.start()
     fwd(a, b)
     t.join(5)
+    b.close()  # the connection this pipe made to the far side
 
 
 def _exact(c, n):

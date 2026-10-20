@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "curlike"
-version = "0.1.0.dev16"
+version = "0.1.0.dev17"
 authors = [{ name = "jose-pr", email = "jose-pr@coqui.dev" }]
 description = "A drop-in curl: the real curl when there is one, with syshttp's proxy and hooks applied, else a curl-compatible command over the standard library"
 readme = "README.md"
@@ -70,7 +70,5 @@ skip-string-normalization = true
 [tool.pytest.ini_options]
 pythonpath = ["src", "tests"]
 testpaths = ["tests"]
-# Warnings are errors, except ResourceWarning: the fake servers of the parity
-# and SOCKS tests leave sockets for the collector, and the fallback does not
-# close the body of an HTTPError it answers with.
-filterwarnings = ["error", "default::ResourceWarning"]
+# Warnings are errors, a ResourceWarning included.
+filterwarnings = ["error"]

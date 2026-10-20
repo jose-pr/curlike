@@ -56,6 +56,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   Authorization and Cookie included, with only the configured proxy's
   credential redacted.
 
+- The test run is warning-clean: the fake servers close the connections they
+  open, and the test configuration turns every warning, ResourceWarning
+  included, into an error.
+
 ### Removed
 
 - `<P>_CURL_COMPAT` and the per-version answers behind it (`curlike.compat`):

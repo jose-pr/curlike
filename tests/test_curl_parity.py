@@ -319,6 +319,7 @@ def _pipe(a, b):
     back.start()
     forward(a, b)
     back.join(5)
+    b.close()  # the connection this pipe made to the far side
 
 
 def _digest_ok(header, method):
